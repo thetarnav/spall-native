@@ -1,11 +1,11 @@
 package main
 
-import "core:fmt"
-import "core:os"
 import "core:bytes"
-import "core:slice"
-import "core:mem"
+import "core:fmt"
 import "core:math"
+import "core:mem"
+import "core:os"
+import "core:slice"
 
 /*
 Handy References:
@@ -14,8 +14,8 @@ Handy References:
 - https://pierrelib.pagesperso-orange.fr/exec_formats/MS_Symbol_Type_v1.0.pdf
 */
 
-DOS_MAGIC  := []u8{ 0x4d, 0x5a }
-PE32_MAGIC := []u8{ 'P', 'E', 0, 0 }
+DOS_MAGIC := []u8{0x4d, 0x5a}
+PE32_MAGIC := []u8{'P', 'E', 0, 0}
 
 DEBUG_TYPE_CODEVIEW :: 2
 DLL_FLAGS_DYNAMIC_BASE :: 0x40
@@ -36,40 +36,40 @@ Data_Directory :: struct #packed {
 }
 
 COFF_Optional_Header :: struct #packed {
-	magic:                u16,
-	linker_major_version:  u8,
-	linker_minor_version:  u8,
-	code_size:            u32,
-	init_data_size:       u32,
-	uninit_data_size:     u32,
-	entrypoint_addr:      u32,
-	code_base:            u32,
-	image_base:           u64,
-	section_align:        u32,
-	file_align:           u32,
-	os_major_version:     u16,
-	os_minor_version:     u16,
-	image_major_version:  u16,
-	image_minor_version:  u16,
+	magic:                   u16,
+	linker_major_version:    u8,
+	linker_minor_version:    u8,
+	code_size:               u32,
+	init_data_size:          u32,
+	uninit_data_size:        u32,
+	entrypoint_addr:         u32,
+	code_base:               u32,
+	image_base:              u64,
+	section_align:           u32,
+	file_align:              u32,
+	os_major_version:        u16,
+	os_minor_version:        u16,
+	image_major_version:     u16,
+	image_minor_version:     u16,
 	subsystem_major_version: u16,
 	subsystem_minor_version: u16,
-	win32_version:        u32,
-	image_size:           u32,
-	headers_size:         u32,
-	checksum:             u32,
-	subsystem:            u16,
-	dll_flags:            u16,
-	reserve_stack_size:   u64,
-	commit_stack_size:    u64,
-	reserve_heap_size:    u64,
-	commit_heap_size:     u64,
-	loader_flags:         u32,
-	rva_and_sizes_count:  u32,
-	data_directories:     [16]Data_Directory,
+	win32_version:           u32,
+	image_size:              u32,
+	headers_size:            u32,
+	checksum:                u32,
+	subsystem:               u16,
+	dll_flags:               u16,
+	reserve_stack_size:      u64,
+	commit_stack_size:       u64,
+	reserve_heap_size:       u64,
+	commit_heap_size:        u64,
+	loader_flags:            u32,
+	rva_and_sizes_count:     u32,
+	data_directories:        [16]Data_Directory,
 }
 
 COFF_Section_Header :: struct #packed {
-	name:             [8]u8,
+	name:               [8]u8,
 	virtual_size:       u32,
 	virtual_addr:       u32,
 	raw_data_size:      u32,
@@ -82,8 +82,8 @@ COFF_Section_Header :: struct #packed {
 }
 
 PE32_Header :: struct #packed {
-	magic: [4]u8,
-	coff_header: COFF_Header,
+	magic:           [4]u8,
+	coff_header:     COFF_Header,
 	optional_header: COFF_Optional_Header,
 }
 
@@ -100,15 +100,15 @@ COFF_Debug_Directory :: struct #packed {
 
 COFF_Debug_Entry :: struct #packed {
 	signature: [4]u8,
-	guid:     [16]u8,
-	age:         u32,
+	guid:      [16]u8,
+	age:       u32,
 }
 
 COFF_Symbol :: struct #packed {
-	name:          [8]u8,
-	value:           u32,
-	section_num:     u16,
-	type:            u16,
+	name:             [8]u8,
+	value:            u32,
+	section_num:      u16,
+	type:             u16,
 	storage_class:    u8,
 	aux_symbol_count: u8,
 }
@@ -116,9 +116,16 @@ COFF_Symbol :: struct #packed {
 // 6 is always debug
 DEBUG_DIR :: 6
 
-get_pdb_path :: proc(rdr: ^Stream_Context, section_hdr: COFF_Section_Header, debug_rva: u32) -> (name: string, ok: bool) {
+get_pdb_path :: proc(
+	rdr: ^Stream_Context,
+	section_hdr: COFF_Section_Header,
+	debug_rva: u32,
+) -> (
+	name: string,
+	ok: bool,
+) {
 	start := section_hdr.virtual_addr
-	end   := start + section_hdr.virtual_size
+	end := start + section_hdr.virtual_size
 
 	if debug_rva < start || (debug_rva + size_of(COFF_Debug_Directory)) > end {
 		return
@@ -155,13 +162,15 @@ load_pe32 :: proc(trace: ^Trace, exec_buffer: []u8, bucket: ^Func_Bucket) -> boo
 		return false
 	}
 
-	
+
 	use_aslr := false
 	if (pe_hdr.optional_header.dll_flags & DLL_FLAGS_DYNAMIC_BASE) != 0 {
 		use_aslr = true
 	}
 
-	string_table_offset := pe_hdr.coff_header.symbol_table_offset + (pe_hdr.coff_header.symbol_count * size_of(COFF_Symbol))
+	string_table_offset :=
+		pe_hdr.coff_header.symbol_table_offset +
+		(pe_hdr.coff_header.symbol_count * size_of(COFF_Symbol))
 	string_table := exec_buffer[string_table_offset:]
 	strtab_size := slice_to_type(string_table, u32) or_return
 
@@ -183,8 +192,8 @@ load_pe32 :: proc(trace: ^Trace, exec_buffer: []u8, bucket: ^Func_Bucket) -> boo
 
 		if might_have_pdb {
 			path, ok := get_pdb_path(&rdr, section_hdr, debug_rva)
-			if !ok { continue }
-			if path == "" { might_have_pdb = false; continue }
+			if !ok {continue}
+			if path == "" {might_have_pdb = false; continue}
 			pdb_path = path
 			break
 		}
@@ -197,26 +206,26 @@ load_pe32 :: proc(trace: ^Trace, exec_buffer: []u8, bucket: ^Func_Bucket) -> boo
 		}
 
 		start := u64(section_hdr.raw_data_offset)
-		size  := u64(section_hdr.raw_data_size)
+		size := u64(section_hdr.raw_data_size)
 		switch section_name {
 		case ".debug_line":
-			sections.line        = create_subbuffer(exec_buffer, start, size) or_return
+			sections.line = create_subbuffer(exec_buffer, start, size) or_return
 		case ".debug_str":
-			sections.debug_str   = create_subbuffer(exec_buffer, start, size) or_return
+			sections.debug_str = create_subbuffer(exec_buffer, start, size) or_return
 		case ".debug_str_offsets":
 			sections.str_offsets = create_subbuffer(exec_buffer, start, size) or_return
 		case ".debug_line_str":
-			sections.line_str    = create_subbuffer(exec_buffer, start, size) or_return
+			sections.line_str = create_subbuffer(exec_buffer, start, size) or_return
 		case ".debug_info":
-			sections.info        = create_subbuffer(exec_buffer, start, size) or_return
+			sections.info = create_subbuffer(exec_buffer, start, size) or_return
 		case ".debug_abbrev":
-			sections.abbrev      = create_subbuffer(exec_buffer, start, size) or_return
+			sections.abbrev = create_subbuffer(exec_buffer, start, size) or_return
 		case ".debug_addr":
-			sections.addr        = create_subbuffer(exec_buffer, start, size) or_return
+			sections.addr = create_subbuffer(exec_buffer, start, size) or_return
 		case ".debug_ranges":
-			sections.ranges      = create_subbuffer(exec_buffer, start, size) or_return
+			sections.ranges = create_subbuffer(exec_buffer, start, size) or_return
 		case ".debug_rnglists":
-			sections.rnglists    = create_subbuffer(exec_buffer, start, size) or_return
+			sections.rnglists = create_subbuffer(exec_buffer, start, size) or_return
 		}
 	}
 	if !use_aslr {
@@ -230,12 +239,13 @@ load_pe32 :: proc(trace: ^Trace, exec_buffer: []u8, bucket: ^Func_Bucket) -> boo
 			pdb_path = opt.pdb_path
 		}
 		fmt.printf("PDB is at %s\n", pdb_path)
-		pdb_buffer := os.read_entire_file_from_filename(pdb_path) or_return
+		pdb_buffer, err := os.read_entire_file(pdb_path, context.allocator)
+		if err != nil {return false}
 		defer delete(pdb_buffer)
 
 		return load_pdb(trace, section_buffer, pdb_buffer, bucket)
 
-	// Do we have DWARF?
+		// Do we have DWARF?
 	} else {
 		return load_dwarf(trace, &sections, bucket, 0)
 	}

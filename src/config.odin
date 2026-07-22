@@ -2,15 +2,15 @@ package main
 
 import "base:runtime"
 
-import "core:os"
-import "core:fmt"
-import "core:slice"
 import "core:bytes"
-import "core:time"
-import "core:path/filepath"
-import "core:mem"
-import "core:strings"
 import "core:container/lru"
+import "core:fmt"
+import "core:mem"
+import "core:os"
+import "core:path/filepath"
+import "core:slice"
+import "core:strings"
+import "core:time"
 
 import "formats:spall_fmt"
 
@@ -23,13 +23,13 @@ FileType :: enum {
 }
 
 Parser :: struct {
-	pos: i64,
+	pos:    i64,
 	offset: i64,
 }
 
 ThreadFileLoadState :: struct {
 	filename: string,
-	trace: ^Trace,
+	trace:    ^Trace,
 	ui_state: ^UIState,
 }
 
@@ -42,12 +42,19 @@ threaded_trace_load :: proc(loader: ^Loader, data: rawptr) {
 	free(state)
 
 	trace.load_kickoff = time.tick_now()
-	parse_start    := time.tick_now()
+	parse_start := time.tick_now()
 	load_spall_file(loader, trace, filename)
 	parse_duration := time.tick_since(parse_start)
 
-	fmt.printf("trace load took: %f ms, got %s events\n", time.duration_milliseconds(parse_duration), tens_fmt(u64(trace.event_count)))
-	fmt.printf("trace length: %s\n", time_fmt(disp_time(trace, f64(trace.total_max_time - trace.total_min_time))))
+	fmt.printf(
+		"trace load took: %f ms, got %s events\n",
+		time.duration_milliseconds(parse_duration),
+		tens_fmt(u64(trace.event_count)),
+	)
+	fmt.printf(
+		"trace length: %s\n",
+		time_fmt(disp_time(trace, f64(trace.total_max_time - trace.total_min_time))),
+	)
 
 	pool_wait(&loader.pool)
 	free_trace_temps(trace)
@@ -59,7 +66,14 @@ threaded_trace_load :: proc(loader: ^Loader, data: rawptr) {
 	ui_state.post_loading = true
 }
 
-load_trace :: proc(loader: ^Loader, trace: ^Trace, ui_state: ^UIState, trace_name: string) -> (ok: bool) {
+load_trace :: proc(
+	loader: ^Loader,
+	trace: ^Trace,
+	ui_state: ^UIState,
+	trace_name: string,
+) -> (
+	ok: bool,
+) {
 	if ui_state.loading_config || trace_name == "" {
 		return false
 	}
@@ -71,9 +85,9 @@ load_trace :: proc(loader: ^Loader, trace: ^Trace, ui_state: ^UIState, trace_nam
 	ui_state.ui_mode = .TraceLoading
 
 	state := new(ThreadFileLoadState)
-	state^ = ThreadFileLoadState{
+	state^ = ThreadFileLoadState {
 		filename = trace_name,
-		trace = trace,
+		trace    = trace,
 		ui_state = ui_state,
 	}
 
@@ -81,9 +95,9 @@ load_trace :: proc(loader: ^Loader, trace: ^Trace, ui_state: ^UIState, trace_nam
 	return true
 }
 
-real_pos :: proc(p: ^Parser) -> i64 { return p.pos }
-chunk_pos :: proc(p: ^Parser) -> i64 { return p.pos - p.offset }
-get_chunk :: proc(p: ^Parser, fd: os.Handle, chunk_buffer: []u8) -> (int, bool) {
+real_pos :: proc(p: ^Parser) -> i64 {return p.pos}
+chunk_pos :: proc(p: ^Parser) -> i64 {return p.pos - p.offset}
+get_chunk :: proc(p: ^Parser, fd: ^os.File, chunk_buffer: []u8) -> (int, bool) {
 	rd_sz, err2 := os.read_at(fd, chunk_buffer, p.pos)
 	if err2 != nil {
 		return 0, false
@@ -171,9 +185,9 @@ find_idx :: proc(trace: ^Trace, events: []Event, val: i64) -> int {
 
 		if (val >= ev_start && val <= ev_end) {
 			return mid
-		} else if ev_start < val && ev_end < val { 
+		} else if ev_start < val && ev_end < val {
 			low = mid + 1
-		} else { 
+		} else {
 			high = mid - 1
 		}
 	}
@@ -182,7 +196,7 @@ find_idx :: proc(trace: ^Trace, events: []Event, val: i64) -> int {
 }
 
 add_event :: proc(events: ^[dynamic]Event, loc := #caller_location) -> ^Event {
-	if cap(events) < len(events)+1 {
+	if cap(events) < len(events) + 1 {
 		cap := 3 * cap(events) + max(8, 1)
 		_ = non_zero_reserve(events, cap, loc)
 	}
@@ -196,7 +210,7 @@ add_event :: proc(events: ^[dynamic]Event, loc := #caller_location) -> ^Event {
 }
 
 append_event :: proc(events: ^[dynamic]Event, ev: ^Event, loc := #caller_location) {
-	if cap(events) < len(events)+1 {
+	if cap(events) < len(events) + 1 {
 		cap := 2 * cap(events) + max(8, 1)
 		_ = non_zero_reserve(events, cap, loc)
 	}
@@ -215,9 +229,15 @@ get_top_two :: proc(weights: []i64) -> (WeightIdx, WeightIdx) {
 	for weight, idx in weights {
 		if weight > largest.weight {
 			second_largest = largest
-			largest = WeightIdx{idx = u8(idx), weight = weight}
+			largest = WeightIdx {
+				idx    = u8(idx),
+				weight = weight,
+			}
 		} else if weight < largest.weight && weight > second_largest.weight {
-			second_largest = WeightIdx{idx = u8(idx), weight = weight}
+			second_largest = WeightIdx {
+				idx    = u8(idx),
+				weight = weight,
+			}
 		}
 	}
 
@@ -225,7 +245,7 @@ get_top_two :: proc(weights: []i64) -> (WeightIdx, WeightIdx) {
 }
 
 gen_event_color :: proc(trace: ^Trace, _events: []Event, thread_max: i64, node: ^ChunkNode) {
-	total_weight : i64 = 0
+	total_weight: i64 = 0
 
 	events := _events
 
@@ -237,7 +257,10 @@ gen_event_color :: proc(trace: ^Trace, _events: []Event, thread_max: i64, node: 
 		// if the event was started with no end, *right* as the trace quit, we'll get a duration of 0
 		// make this 1 so it has *some* LOD contribution
 		node.total_weight = max(duration, 1)
-		node.p[0] = WeightIdx{idx = u8(name_color_idx(name)), weight = node.total_weight}
+		node.p[0] = WeightIdx {
+			idx    = u8(name_color_idx(name)),
+			weight = node.total_weight,
+		}
 		return
 	}
 
@@ -263,7 +286,9 @@ print_tree :: proc(depth: ^Depth) {
 	// If we blow this, we're in space
 	tree_stack := [128]int{}
 	stack_len := 0
-	pad_buf := [?]u8{0..<64 = '\t',}
+	pad_buf := [?]u8 {
+		0 ..< 64 = '\t',
+	}
 
 	tree_stack[0] = 0; stack_len += 1
 	for stack_len > 0 {
@@ -272,7 +297,13 @@ print_tree :: proc(depth: ^Depth) {
 		tree_idx := tree_stack[stack_len]
 		cur_node := &depth.tree[tree_idx]
 
-		fmt.printf("%d | start: %v, end: %v, weight: %v\n", tree_idx, cur_node.start_time, cur_node.end_time, cur_node.total_weight)
+		fmt.printf(
+			"%d | start: %v, end: %v, weight: %v\n",
+			tree_idx,
+			cur_node.start_time,
+			cur_node.end_time,
+			cur_node.total_weight,
+		)
 
 		if tree_idx > (len(depth.tree) - depth.leaf_count - 1) {
 			continue
@@ -316,7 +347,7 @@ chunk_events :: proc(trace: ^Trace) {
 				cur_node := 0
 				overhang_idx := 0
 				prehang_rank := 0
-				for ; cur_node < total_node_count; {
+				for cur_node < total_node_count {
 					overhang_idx = cur_node
 					cur_node = (CHUNK_NARY_WIDTH * cur_node) + 1
 
@@ -325,7 +356,7 @@ chunk_events :: proc(trace: ^Trace) {
 
 				posthang_rank := 1
 				tmp_idx := len(tree) - leaf_count
-				for ; tmp_idx > 0; {
+				for tmp_idx > 0 {
 					tmp_idx = (tmp_idx - 1) / CHUNK_NARY_WIDTH
 					posthang_rank += 1
 				}
@@ -349,12 +380,15 @@ chunk_events :: proc(trace: ^Trace) {
 					scan_arr := depth.events[start_idx:end_idx]
 
 					start_ev := &scan_arr[0]
-					end_ev := &scan_arr[len(scan_arr)-1]
+					end_ev := &scan_arr[len(scan_arr) - 1]
 					tree_idx := overhang_idx + i
 
 					node := &tree[tree_idx]
 					node.start_time = start_ev.timestamp - trace.total_min_time
-					node.end_time   = end_ev.timestamp + bound_duration(end_ev, tm.max_time) - trace.total_min_time
+					node.end_time =
+						end_ev.timestamp +
+						bound_duration(end_ev, tm.max_time) -
+						trace.total_min_time
 					gen_event_color(trace, scan_arr, tm.max_time, node)
 
 				}
@@ -368,12 +402,15 @@ chunk_events :: proc(trace: ^Trace) {
 					scan_arr := depth.events[start_idx:end_idx]
 
 					start_ev := &scan_arr[0]
-					end_ev := &scan_arr[len(scan_arr)-1]
+					end_ev := &scan_arr[len(scan_arr) - 1]
 					tree_idx := tree_start_idx + i
 
 					node := &tree[tree_idx]
 					node.start_time = start_ev.timestamp - trace.total_min_time
-					node.end_time   = end_ev.timestamp + bound_duration(end_ev, tm.max_time) - trace.total_min_time
+					node.end_time =
+						end_ev.timestamp +
+						bound_duration(end_ev, tm.max_time) -
+						trace.total_min_time
 					gen_event_color(trace, scan_arr, tm.max_time, node)
 				}
 
@@ -385,7 +422,7 @@ chunk_events :: proc(trace: ^Trace) {
 					end_idx := min(start_idx + (CHUNK_NARY_WIDTH - 1), len(tree) - 1)
 
 					node.start_time = tree[start_idx].start_time
-					node.end_time   = tree[end_idx].end_time
+					node.end_time = tree[end_idx].end_time
 
 					color_weights := [COLOR_CHOICES]i64{}
 					children := tree[start_idx:end_idx]
@@ -514,16 +551,21 @@ get_event_range :: proc(depth: ^Depth, idx: int) -> (int, int) {
 	return start, end
 }
 
-pid_sort_proc :: proc(a, b: Process) -> bool { return a.min_time < b.min_time }
-tid_sort_proc :: proc(a, b: Thread) -> bool  { return a.min_time < b.min_time }
+pid_sort_proc :: proc(a, b: Process) -> bool {return a.min_time < b.min_time}
+tid_sort_proc :: proc(a, b: Thread) -> bool {return a.min_time < b.min_time}
 
-new_func_bucket :: proc(buckets: ^[dynamic]Func_Bucket, path: string, base_addr: u64) -> ^Func_Bucket {
-	append(buckets,
-		Func_Bucket{
+new_func_bucket :: proc(
+	buckets: ^[dynamic]Func_Bucket,
+	path: string,
+	base_addr: u64,
+) -> ^Func_Bucket {
+	append(
+		buckets,
+		Func_Bucket {
 			source_path = path,
 			base_address = base_addr,
 			functions = make([dynamic]Function),
-			scopes = Scope{
+			scopes = Scope {
 				func_idx = max(u64),
 				low_pc = max(u64),
 				high_pc = min(u64),
@@ -532,13 +574,13 @@ new_func_bucket :: proc(buckets: ^[dynamic]Func_Bucket, path: string, base_addr:
 		},
 	)
 
-	return &buckets[len(buckets)-1]
+	return &buckets[len(buckets) - 1]
 }
 
 Load_Symbols_Args :: struct {
-	trace: ^Trace,
+	trace:     ^Trace,
 	base_addr: u64,
-	path:  string,
+	path:      string,
 }
 load_symbols_task :: proc(pool: ^Pool, raw_args: rawptr) {
 	args := cast(^Load_Symbols_Args)(raw_args)
@@ -548,8 +590,8 @@ load_symbols_task :: proc(pool: ^Pool, raw_args: rawptr) {
 load_executable :: proc(trace: ^Trace, file_name: string, base_addr: u64) -> bool {
 	fmt.printf("Loading symbols from %s\n", file_name)
 
-	exec_buffer, ok := os.read_entire_file_from_filename(file_name)
-	if !ok {
+	exec_buffer, err := os.read_entire_file(file_name, context.allocator)
+	if err != nil {
 		post_error(trace, "Failed to load symbols from %s!", file_name)
 		return false
 	}
@@ -559,7 +601,7 @@ load_executable :: proc(trace: ^Trace, file_name: string, base_addr: u64) -> boo
 		post_error(trace, "Invalid executable file!")
 		return false
 	}
-	
+
 	bucket := new_func_bucket(&trace.func_buckets, file_name, base_addr)
 
 	magic_chunk := (^u32)(raw_data(exec_buffer[:4]))^
@@ -578,8 +620,8 @@ load_executable :: proc(trace: ^Trace, file_name: string, base_addr: u64) -> boo
 		}
 
 		debug_file_name := guess_debug_path(file_name)
-		debug_buffer, ok2 := os.read_entire_file_from_filename(debug_file_name)
-		if !ok2 {
+		debug_buffer, err2 := os.read_entire_file(debug_file_name, context.allocator)
+		if err2 != nil {
 			post_error(trace, "No debug info found!")
 			return false
 		}
@@ -604,14 +646,14 @@ load_executable :: proc(trace: ^Trace, file_name: string, base_addr: u64) -> boo
 }
 
 init_trace_allocs :: proc(trace: ^Trace, file_name: string) {
-	trace.processes    = make([dynamic]Process)
-	trace.process_map  = vh_init()
+	trace.processes = make([dynamic]Process)
+	trace.process_map = vh_init()
 	trace.string_block = make([dynamic]string)
-	trace.intern       = in_init()
+	trace.intern = in_init()
 	trace.func_buckets = make([dynamic]Func_Bucket)
 
 	trace.stats.selected_ranges = make([dynamic]Range)
-	trace.stats.stat_map        = sm_init()
+	trace.stats.stat_map = sm_init()
 
 	trace.base_name = filepath.base(file_name)
 	trace.file_name = file_name
@@ -623,24 +665,20 @@ init_trace_allocs :: proc(trace: ^Trace, file_name: string) {
 }
 
 init_trace :: proc(trace: ^Trace) {
-	trace^ = Trace{
+	trace^ = Trace {
 		total_max_time = min(i64),
 		total_min_time = max(i64),
-
 		event_count = 0,
 		stamp_scale = 1,
-
 		zoom_event = empty_event,
-		stats = Stats{
-			state           = .NoStats,
-			just_started    = false,
-
-			selected_func   = {},
-			selected_event  = empty_event,
-			pressed_event   = empty_event,
-			released_event  = empty_event,
+		stats = Stats {
+			state = .NoStats,
+			just_started = false,
+			selected_func = {},
+			selected_event = empty_event,
+			pressed_event = empty_event,
+			released_event = empty_event,
 		},
-
 		parser = Parser{},
 		error_message = "",
 	}
@@ -683,7 +721,7 @@ load_spall_file :: proc(loader: ^Loader, trace: ^Trace, file_name: string) {
 		return
 	}
 
-	header_size : i64 = 0
+	header_size: i64 = 0
 	file_type: FileType
 	if magic == spall_fmt.MANUAL_MAGIC {
 		hdr, ok := slice_to_type(header_buffer[:], spall_fmt.Manual_Header)
@@ -696,12 +734,12 @@ load_spall_file :: proc(loader: ^Loader, trace: ^Trace, file_name: string) {
 			post_error(trace, "Spall version %d for %s is invalid!", hdr.version, file_name)
 			return
 		}
-		
+
 		trace.stamp_scale = hdr.timestamp_unit
 		header_size = size_of(spall_fmt.Manual_Header)
 
-		if hdr.version == 1 { 
-			file_type = .ManualStreamV1 
+		if hdr.version == 1 {
+			file_type = .ManualStreamV1
 			trace.stamp_scale *= 1000
 		} else if hdr.version == 3 {
 			file_type = .ManualStreamV2
@@ -714,10 +752,14 @@ load_spall_file :: proc(loader: ^Loader, trace: ^Trace, file_name: string) {
 			return
 		}
 
-        if hdr.version < 3 {
-			post_error(trace, "Support for auto-tracing v%d has been dropped in this version, please grab the new header!", hdr.version)
+		if hdr.version < 3 {
+			post_error(
+				trace,
+				"Support for auto-tracing v%d has been dropped in this version, please grab the new header!",
+				hdr.version,
+			)
 			return
-        }
+		}
 		if hdr.version != 3 {
 			post_error(trace, "Spall version %d for %s is invalid!", hdr.version, file_name)
 			return
@@ -726,7 +768,7 @@ load_spall_file :: proc(loader: ^Loader, trace: ^Trace, file_name: string) {
 			post_error(trace, "%s is invalid!", file_name)
 			return
 		}
-		
+
 		trace.stamp_scale = hdr.timestamp_unit
 		fmt.printf("Base address of executable: 0x%08x\n", hdr.base_address)
 
@@ -747,9 +789,12 @@ load_spall_file :: proc(loader: ^Loader, trace: ^Trace, file_name: string) {
 		file_type = .AutoStream
 	} else {
 		leading_char := header_buffer[0]
-		if leading_char == ' '  || leading_char == '\n' ||
-		   leading_char == '\r' || leading_char == '\t' ||
-		   leading_char == '{'  || leading_char == '[' {
+		if leading_char == ' ' ||
+		   leading_char == '\n' ||
+		   leading_char == '\r' ||
+		   leading_char == '\t' ||
+		   leading_char == '{' ||
+		   leading_char == '[' {
 			file_type = .Json
 		} else {
 			file_type = .Invalid
@@ -776,7 +821,10 @@ load_spall_file :: proc(loader: ^Loader, trace: ^Trace, file_name: string) {
 
 	if parsed_properly && (p.pos == i64(header_size) || trace.event_count == 0) {
 		parsed_properly = false
-		post_error(trace, "Trace is empty, did you remember to quit your threads and enable -finstrument-functions?")
+		post_error(
+			trace,
+			"Trace is empty, did you remember to quit your threads and enable -finstrument-functions?",
+		)
 	}
 
 	if !parsed_properly {
@@ -795,8 +843,10 @@ load_spall_file :: proc(loader: ^Loader, trace: ^Trace, file_name: string) {
 	}
 
 	#partial switch file_type {
-	case .ManualStreamV1: fallthrough
-	case .ManualStreamV2: fallthrough
+	case .ManualStreamV1:
+		fallthrough
+	case .ManualStreamV2:
+		fallthrough
 	case .AutoStream:
 		for process in &trace.processes {
 			slice.sort_by(process.threads[:], tid_sort_proc)
@@ -806,12 +856,15 @@ load_spall_file :: proc(loader: ^Loader, trace: ^Trace, file_name: string) {
 		json_process_events(trace)
 	}
 	fmt.printf("parse config -- %f ms\n", time.duration_milliseconds(time.tick_since(start_time)))
-	
+
 	generate_color_choices(trace, false)
 
 	start_time = time.tick_now()
 	chunk_events(trace)
-	fmt.printf("generate spatial partitions -- %f ms\n", time.duration_milliseconds(time.tick_since(start_time)))
+	fmt.printf(
+		"generate spatial partitions -- %f ms\n",
+		time.duration_milliseconds(time.tick_since(start_time)),
+	)
 
 	if file_type == .Json {
 		start_time = time.tick_now()
@@ -819,7 +872,10 @@ load_spall_file :: proc(loader: ^Loader, trace: ^Trace, file_name: string) {
 		json_generate_selftimes(trace)
 		trace.stamp_scale = 1
 
-		fmt.printf("generate selftimes -- %f ms\n", time.duration_milliseconds(time.tick_since(start_time)))
+		fmt.printf(
+			"generate selftimes -- %f ms\n",
+			time.duration_milliseconds(time.tick_since(start_time)),
+		)
 	}
 }
 
@@ -847,7 +903,7 @@ get_bucket :: proc(trace: ^Trace, addr: u64) -> (^Func_Bucket, bool) {
 		}
 
 		first_func := bucket.functions[0]
-		last_func := bucket.functions[len(bucket.functions)-1]
+		last_func := bucket.functions[len(bucket.functions) - 1]
 		if addr >= first_func.low_pc && addr <= last_func.high_pc {
 			//fmt.printf("0x%08x | [0x%08x - 0x%08x]\n", _addr, first_func.low_pc, last_func.high_pc)
 			cur_bucket = &bucket
@@ -874,9 +930,9 @@ find_next_scope :: proc(scopes: ^[dynamic]Scope, addr: u64) -> (^Scope, bool) {
 
 		if addr >= scope.low_pc && addr <= scope.high_pc {
 			return scope, true
-		} else if addr >= scope.high_pc { 
+		} else if addr >= scope.high_pc {
 			low = mid + 1
-		} else { 
+		} else {
 			high = mid - 1
 		}
 	}
@@ -936,7 +992,7 @@ get_line_info :: proc(trace: ^Trace, addr: u64) -> (string, u64, bool) {
 	}
 
 	line_info_start := cur_bucket.line_info[0].address
-	line_info_end := cur_bucket.line_info[len(cur_bucket.line_info)-1].address
+	line_info_end := cur_bucket.line_info[len(cur_bucket.line_info) - 1].address
 
 	// make sure address is within line-info bounds
 	if line_info_start > addr || line_info_end < addr {
@@ -953,9 +1009,9 @@ get_line_info :: proc(trace: ^Trace, addr: u64) -> (string, u64, bool) {
 		line_info := cur_bucket.line_info[mid]
 		if addr == line_info.address {
 			return line_info.filename, line_info.line_num, true
-		} else if addr > line_info.address { 
+		} else if addr > line_info.address {
 			low = mid + 1
-		} else { 
+		} else {
 			high = mid - 1
 		}
 	}
@@ -971,11 +1027,21 @@ get_line_info :: proc(trace: ^Trace, addr: u64) -> (string, u64, bool) {
 }
 
 add_line_info :: proc(bucket: ^Func_Bucket, addr: u64, line_num: u64, name: string) {
-	line := Line_Info{address = addr, filename = name, line_num = line_num}
+	line := Line_Info {
+		address  = addr,
+		filename = name,
+		line_num = line_num,
+	}
 	non_zero_append(&bucket.line_info, line)
 }
 
-add_func :: proc(bucket: ^Func_Bucket, sym_idx: u64, in_low_pc: u64, in_high_pc: u64, text_skew: u64) {
+add_func :: proc(
+	bucket: ^Func_Bucket,
+	sym_idx: u64,
+	in_low_pc: u64,
+	in_high_pc: u64,
+	text_skew: u64,
+) {
 	low_pc := (bucket.base_address + in_low_pc) - text_skew
 	high_pc := (bucket.base_address + in_high_pc) - text_skew
 
@@ -984,7 +1050,11 @@ add_func :: proc(bucket: ^Func_Bucket, sym_idx: u64, in_low_pc: u64, in_high_pc:
 	bucket.scopes.low_pc = min(bucket.scopes.low_pc, low_pc)
 	bucket.scopes.high_pc = max(bucket.scopes.high_pc, high_pc)
 
-	func := Function{name = sym_idx, low_pc = low_pc, high_pc = high_pc}
+	func := Function {
+		name    = sym_idx,
+		low_pc  = low_pc,
+		high_pc = high_pc,
+	}
 	non_zero_append(&bucket.functions, func)
 }
 
@@ -1054,7 +1124,11 @@ build_scopes :: proc(trace: ^Trace, bucket: ^Func_Bucket) {
 			}
 
 			if child_scope == nil {
-				new_scope := Scope{func_idx = u64(idx), low_pc = func.low_pc, high_pc = func.high_pc}
+				new_scope := Scope {
+					func_idx = u64(idx),
+					low_pc   = func.low_pc,
+					high_pc  = func.high_pc,
+				}
 				append(&cur_scope.children, new_scope)
 				break scopes_walk
 			} else {
