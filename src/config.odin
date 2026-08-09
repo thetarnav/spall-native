@@ -3,6 +3,7 @@ package main
 import "base:runtime"
 
 import "core:os"
+import "core:io"
 import "core:fmt"
 import "core:slice"
 import "core:bytes"
@@ -83,13 +84,20 @@ load_trace :: proc(loader: ^Loader, trace: ^Trace, ui_state: ^UIState, trace_nam
 
 real_pos :: proc(p: ^Parser) -> i64 { return p.pos }
 chunk_pos :: proc(p: ^Parser) -> i64 { return p.pos - p.offset }
-get_chunk :: proc(p: ^Parser, fd: os.Handle, chunk_buffer: []u8) -> (int, bool) {
-	rd_sz, err2 := os.read_at(fd, chunk_buffer, p.pos)
-	if err2 != nil {
-		return 0, false
-	}
 
+read_at_partial :: proc(fd: ^os.File, buf: []u8, offset: i64) -> (int, bool) {
+	rd_sz, err := os.read_at(fd, buf, offset)
+	if err != nil {
+		if v, is_io := err.(io.Error); is_io && (v == .EOF || v == .Unexpected_EOF) {
+			return rd_sz, true
+		}
+		return rd_sz, false
+	}
 	return rd_sz, true
+}
+
+get_chunk :: proc(p: ^Parser, fd: ^os.File, chunk_buffer: []u8) -> (int, bool) {
+	return read_at_partial(fd, chunk_buffer, p.pos)
 }
 
 setup_pid :: proc(trace: ^Trace, process_id: u32) -> int {
@@ -548,8 +556,8 @@ load_symbols_task :: proc(pool: ^Pool, raw_args: rawptr) {
 load_executable :: proc(trace: ^Trace, file_name: string, base_addr: u64) -> bool {
 	fmt.printf("Loading symbols from %s\n", file_name)
 
-	exec_buffer, ok := os.read_entire_file_from_filename(file_name)
-	if !ok {
+	exec_buffer, read_err := os.read_entire_file(file_name, context.allocator)
+	if read_err != nil {
 		post_error(trace, "Failed to load symbols from %s!", file_name)
 		return false
 	}
@@ -578,8 +586,8 @@ load_executable :: proc(trace: ^Trace, file_name: string, base_addr: u64) -> boo
 		}
 
 		debug_file_name := guess_debug_path(file_name)
-		debug_buffer, ok2 := os.read_entire_file_from_filename(debug_file_name)
-		if !ok2 {
+		debug_buffer, read_err2 := os.read_entire_file(debug_file_name, context.allocator)
+		if read_err2 != nil {
 			post_error(trace, "No debug info found!")
 			return false
 		}
@@ -671,8 +679,8 @@ load_spall_file :: proc(loader: ^Loader, trace: ^Trace, file_name: string) {
 	fmt.printf("Loading %s, %M\n", trace.base_name, trace.total_size)
 
 	header_buffer := [0x4000]u8{}
-	rd_sz, err3 := os.read_at(trace_fd, header_buffer[:], 0)
-	if err3 != nil {
+	_, read_ok := read_at_partial(trace_fd, header_buffer[:], 0)
+	if !read_ok {
 		post_error(trace, "Unable to read %s!", file_name)
 		return
 	}
@@ -802,6 +810,7 @@ load_spall_file :: proc(loader: ^Loader, trace: ^Trace, file_name: string) {
 			slice.sort_by(process.threads[:], tid_sort_proc)
 		}
 		slice.sort_by(trace.processes[:], pid_sort_proc)
+		slice.sort_by(trace.global_instants[:], instant_rendersort_proc)
 	case .Json:
 		json_process_events(trace)
 	}
