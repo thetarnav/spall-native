@@ -239,8 +239,8 @@ load_pe32 :: proc(trace: ^Trace, exec_buffer: []u8, bucket: ^Func_Bucket) -> boo
 			pdb_path = opt.pdb_path
 		}
 		fmt.printf("PDB is at %s\n", pdb_path)
-		pdb_buffer, err := os.read_entire_file(pdb_path, context.allocator)
-		if err != nil {return false}
+		pdb_buffer, pdb_err := os.read_entire_file(pdb_path, context.allocator)
+		if pdb_err != nil do return false
 		defer delete(pdb_buffer)
 
 		return load_pdb(trace, section_buffer, pdb_buffer, bucket)

@@ -116,8 +116,8 @@ ms_v1_parse :: proc(trace: ^Trace, fd: ^os.File, header_size: i64) -> bool {
 	chunk_buffer := make([]u8, 4 * 1024 * 1024)
 	defer delete(chunk_buffer)
 
-	read_size, err := os.read_at(fd, chunk_buffer, 0)
-	if err != nil {
+	read_size, read_ok := read_at_partial(fd, chunk_buffer, 0)
+	if !read_ok {
 		post_error(trace, "Unable to read file!")
 		return false
 	}
@@ -335,6 +335,31 @@ ms_v2_parse_next_event :: proc(trace: ^Trace, chunk: []u8, process: ^Process, th
 		
 		p.pos += event_sz
 		return .EventRead
+	case .Instant:
+		event_sz := i64(size_of(spall_fmt.Instant_Event_V2))
+		if chunk_pos(p) + event_sz > i64(len(chunk)) {
+			return .PartialRead
+		}
+		event := (^spall_fmt.Instant_Event_V2)(raw_data(data_start))
+		event_tail := i64(event.name_len)
+		if (chunk_pos(p) + event_sz + event_tail) > i64(len(chunk)) {
+			return .PartialRead
+		}
+
+		name := string(data_start[event_sz:event_sz+event_tail])
+
+		instant := Instant{
+			id = in_get(&trace.intern, &trace.string_block, name),
+			timestamp = i64(event.time),
+		}
+
+		trace.total_min_time = min(trace.total_min_time, instant.timestamp)
+		trace.total_max_time = max(trace.total_max_time, instant.timestamp)
+		trace.instant_count += 1
+		non_zero_append(&trace.global_instants, instant)
+
+		p.pos += event_sz + event_tail
+		return .EventRead
 	case .Pad_Skip:
 		event_sz := i64(size_of(spall_fmt.Pad_Skip))
 		if chunk_pos(p) + event_sz > i64(len(chunk)) {
@@ -398,8 +423,8 @@ ms_v2_parse :: proc(trace: ^Trace, fd: ^os.File, header_size: i64) -> bool {
 	chunk_buffer := make([]u8, 4 * 1024 * 1024)
 	defer delete(chunk_buffer)
 
-	read_size, err := os.read_at(fd, chunk_buffer, 0)
-	if err != nil {
+	read_size, read_ok := read_at_partial(fd, chunk_buffer, 0)
+	if !read_ok {
 		post_error(trace, "Unable to read file!")
 		return false
 	}
