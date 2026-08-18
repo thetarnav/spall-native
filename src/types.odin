@@ -4,29 +4,39 @@ import "core:fmt"
 import "core:strings"
 import "core:time"
 import "core:container/lru"
+import k2 "../karl2d"
 
-Vec2 :: [2]f64
-FVec2 :: [2]f32
-
-Vec3 :: [3]f64
+Vec2  :: [2]f64
+Vec3  :: [3]f64
 FVec3 :: [3]f32
-
-FVec4 :: [4]f32
 BVec4 :: [4]u8
 
-IRect :: struct {//[4]i32
-	x: i32,
-	y: i32,
-	w: i32,
-	h: i32,
+// GFX_Context is Spall's small adapter state. Logical dimensions are UI units; physical dimensions
+// are drawable pixels reported by Karl2D. Mouse coordinates passed to UI code use logical units.
+// `karl2d_state` and every font handle become invalid before shutdown completes. `service_state` is
+// retained OS-service state and is not owned by Karl2D.
+GFX_Context :: struct {
+	logical_width:  f64,
+	logical_height: f64,
+	physical_width: int,
+	physical_height: int,
+	window_scale:   f64,
+	fullscreen:     bool,
+
+	fonts:          [FontType.LastFont]k2.Font,
+	service_state:  rawptr,
 }
 
-Rect :: struct {
-	x: f64,
-	y: f64,
-	w: f64,
-	h: f64,
+// frontend_physical_dimensions converts logical UI dimensions to drawable pixels. Dimensions are
+// rounded to the nearest pixel; non-positive input produces an uninitialized zero dimension.
+frontend_physical_dimensions :: proc(logical_width, logical_height, scale: f64) -> (int, int) {
+	if logical_width <= 0 || logical_height <= 0 || scale <= 0 {
+		return 0, 0
+	}
+	return int(logical_width*scale + 0.5), int(logical_height*scale + 0.5)
 }
+
+Rect :: struct {x, y, w, h: f64}
 
 TextboxState :: struct {
 	focus: bool,
@@ -107,20 +117,6 @@ UIState :: struct {
 	textboxes: map[TextboxKind]TextboxState,
 }
 
-DrawRect :: struct #packed {
-	pos: FVec4,
-	color: BVec4,
-	uv: FVec2,
-}
-TextRect :: struct {
-	str: string,
-	scale: FontSize,
-	type: FontType,
-	pos: FVec2,
-	color: BVec4,
-}
-TextRectArr :: [dynamic]TextRect
-
 FontSize :: enum u8 {
 	PSize = 0,
 	H1Size,
@@ -133,18 +129,6 @@ FontType :: enum u8 {
 	MonoFont,
 	IconFont,
 	LastFont,
-}
-
-Font_LRU_Key :: struct #packed {
-	size: FontSize,
-	type: FontType,
-	str: string,
-}
-
-Font_LRU_Text :: struct {
-	handle: u32,
-	width: i32,
-	height: i32,
 }
 
 SpallError :: enum int {
@@ -409,7 +393,7 @@ Process :: struct {
 
 init_process :: proc(process_id: u32) -> Process {
 	return Process{
-		min_time = max(i64), 
+		min_time = max(i64),
 		id = process_id,
 		in_stats = true,
 		thread_map = vh_init(),
@@ -432,7 +416,7 @@ get_proc_name :: proc(trace: ^Trace, process: ^Process) -> string {
 
 init_thread :: proc(thread_id: u32) -> Thread {
 	t := Thread{
-		min_time = max(i64), 
+		min_time = max(i64),
 		zero_patchup = -1,
 		//last_dt = -1,
 		id = thread_id,

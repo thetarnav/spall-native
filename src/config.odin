@@ -8,7 +8,6 @@ import "core:fmt"
 import "core:slice"
 import "core:bytes"
 import "core:container/lru"
-import "core:mem"
 import "core:path/filepath"
 import "core:strings"
 import "core:time"
@@ -34,6 +33,15 @@ ThreadFileLoadState :: struct {
 	ui_state: ^UIState,
 }
 
+threaded_trace_load_cleanup :: proc(data: rawptr) {
+	state := cast(^ThreadFileLoadState)data
+	if state == nil {
+		return
+	}
+	delete(state.filename)
+	free(state)
+}
+
 threaded_trace_load :: proc(loader: ^Loader, data: rawptr) {
 	state := cast(^ThreadFileLoadState)(data)
 
@@ -41,6 +49,10 @@ threaded_trace_load :: proc(loader: ^Loader, data: rawptr) {
 	filename := state.filename
 	ui_state := state.ui_state
 	free(state)
+	// ThreadFileLoadState owns filename. The worker releases it after taking
+	// the value out of the state so asynchronous loads cannot retain a caller's
+	// temporary string allocation.
+	defer delete(filename)
 
 	trace.load_kickoff = time.tick_now()
 	parse_start := time.tick_now()
@@ -76,6 +88,11 @@ load_trace :: proc(
 	ok: bool,
 ) {
 	if ui_state.loading_config || trace_name == "" {
+		// Callers transfer ownership on entry. A rejected request never reaches
+		// the worker, so release its path here instead of leaking it.
+		if len(trace_name) > 0 {
+			delete(trace_name)
+		}
 		return false
 	}
 
@@ -87,12 +104,13 @@ load_trace :: proc(
 
 	state := new(ThreadFileLoadState)
 	state^ = ThreadFileLoadState {
+		// Successful submission transfers trace_name to the worker state.
 		filename = trace_name,
 		trace    = trace,
 		ui_state = ui_state,
 	}
 
-	loader_set_task(loader, Loader_Task{threaded_trace_load, state})
+	loader_set_task(loader, Loader_Task{do_work = threaded_trace_load, args = state, cleanup = threaded_trace_load_cleanup})
 	return true
 }
 
@@ -293,9 +311,6 @@ print_tree :: proc(depth: ^Depth) {
 	// If we blow this, we're in space
 	tree_stack := [128]int{}
 	stack_len := 0
-	pad_buf := [?]u8 {
-		0 ..< 64 = '\t',
-	}
 
 	tree_stack[0] = 0; stack_len += 1
 	for stack_len > 0 {
@@ -331,8 +346,8 @@ chunk_events :: proc(trace: ^Trace) {
 	ev_mem_usage := 0
 
 	// using an eytzinger LOD tree for each depth array
-	for &proc_v, p_idx in trace.processes {
-		for &tm, t_idx in proc_v.threads {
+	for &proc_v in trace.processes {
+		for &tm in proc_v.threads {
 			//fmt.printf("stepped thread\n")
 			for &depth, d_idx in tm.depths {
 				//fmt.printf("stepped depth\n")
@@ -524,8 +539,6 @@ get_right_leaf :: proc(depth: ^Depth, idx: int) -> int {
 
 	internal_nodes := depth.leaf_count / (CHUNK_NARY_WIDTH - 1)
 	total_tree_count := internal_nodes + depth.leaf_count
-
-	prev_leaves := depth.full_leaves / CHUNK_NARY_WIDTH
 
 	tmp_idx := idx
 	last_tmp := idx

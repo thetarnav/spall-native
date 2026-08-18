@@ -1,8 +1,6 @@
 package main
 
 import "core:fmt"
-import "core:strings"
-import "core:slice"
 import "core:mem"
 import "core:os"
 import "formats:spall_fmt"
@@ -53,7 +51,7 @@ ms_v1_get_next_event :: proc(trace: ^Trace, chunk: []u8, temp_ev: ^TempEvent) ->
 		temp_ev.timestamp = i64(event.time)
 		temp_ev.thread_id = event.tid
 		temp_ev.process_id = event.pid
-		
+
 		p.pos += event_sz
 		return .EventRead
 	case .Pad_Skip:
@@ -84,8 +82,8 @@ ms_v1_push_event :: proc(trace: ^Trace, process_id, thread_id: u32, event: ^Even
 	t := &p.threads[t_idx]
 	t.min_time = min(t.min_time, event.timestamp)
 	if t.max_time > event.timestamp {
-		post_error(trace, 
-			"Woah, time-travel? You just had a begin event that started before a previous one; [pid: %d, tid: %d, name: %s, event: %v, event_count: %d]", 
+		post_error(trace,
+			"Woah, time-travel? You just had a begin event that started before a previous one; [pid: %d, tid: %d, name: %s, event: %v, event_count: %d]",
 			process_id, thread_id, in_getstr(&trace.string_block, event.id), event, trace.event_count)
 		return 0, 0, 0, false
 	}
@@ -270,8 +268,8 @@ ms_v2_parse_next_event :: proc(trace: ^Trace, chunk: []u8, process: ^Process, th
 		}
 
 		if thread.max_time > ev.timestamp {
-			post_error(trace, 
-				"Woah, time-travel? You just had a begin event that started before a previous one; [pid: %d, tid: %d, name: %s, event: %v, event_count: %d]", 
+			post_error(trace,
+				"Woah, time-travel? You just had a begin event that started before a previous one; [pid: %d, tid: %d, name: %s, event: %v, event_count: %d]",
 				0, thread.id, in_getstr(&trace.string_block, ev.id), ev, trace.event_count)
 			return .Failure
 		}
@@ -332,7 +330,7 @@ ms_v2_parse_next_event :: proc(trace: ^Trace, chunk: []u8, process: ^Process, th
 				pev.self_time += jev.duration
 			}
 		}
-		
+
 		p.pos += event_sz
 		return .EventRead
 	case .Instant:

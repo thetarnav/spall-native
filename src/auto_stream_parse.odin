@@ -3,11 +3,7 @@ package main
 import "base:intrinsics"
 
 import "core:fmt"
-import "core:strings"
-import "core:slice"
-import "core:mem"
 import "core:os"
-import "core:math"
 import "formats:spall_fmt"
 
 as_get_next_buffer :: proc(trace: ^Trace, chunk: []u8, buffer_header: ^spall_fmt.Auto_Buffer_Header) -> BinaryState {
@@ -47,7 +43,7 @@ as_parse_next_event :: proc(trace: ^Trace, chunk: []u8, process: ^Process, threa
     type_byte := ((^u8)(raw_data(data_start))^)
     type_tag := type_byte >> 6
 
-    i : i64 = 1
+    i: i64 = 1
     switch type_tag {
 	case 0: // MicroBegin
 		dt_size     := i64(1 << ((0b00_11_00_00 & type_byte) >> 4))
@@ -72,8 +68,8 @@ as_parse_next_event :: proc(trace: ^Trace, chunk: []u8, process: ^Process, threa
 		//fmt.printf("B | ts: %v -- dt: %v || max time: %v\n", timestamp, dt, thread.max_time)
 
 		if thread.max_time > timestamp {
-			post_error(trace, 
-				"Woah, time-travel? You just had a begin event that started before a previous one; [pid: %d, tid: %d, addr: 0x%x, event_count: %d]", 
+			post_error(trace,
+				"Woah, time-travel? You just had a begin event that started before a previous one; [pid: %d, tid: %d, addr: 0x%x, event_count: %d]",
 				0, thread.id, id, trace.event_count)
 			return .Failure
 		}
@@ -132,7 +128,7 @@ as_parse_next_event :: proc(trace: ^Trace, chunk: []u8, process: ^Process, threa
 				pev.self_time += jev.duration
 			}
 		}
-		
+
 		current_time^ = ts
 		p.pos += event_sz
 	case 2: // Other Events
@@ -147,8 +143,8 @@ as_parse_next_event :: proc(trace: ^Trace, chunk: []u8, process: ^Process, threa
 			if chunk_pos(p) + min_event_sz > i64(len(chunk)) {
 				return .PartialRead
 			}
-			
-			i : i64 = 1
+
+			i: i64 = 1
 			dt := pull_uval(chunk[chunk_pos(p)+i:], int(dt_size));    i += dt_size
 			name_len := pull_uval(chunk[chunk_pos(p)+i:], int(name_size)); i += name_size
 			args_len := pull_uval(chunk[chunk_pos(p)+i:], int(arg_size));  i += arg_size
@@ -168,8 +164,8 @@ as_parse_next_event :: proc(trace: ^Trace, chunk: []u8, process: ^Process, threa
 
 			//fmt.printf("MB | %v -- dt: %v\n", timestamp, dt)
 			if thread.max_time > timestamp {
-				post_error(trace, 
-					"Woah, time-travel? You just had a begin event that started before a previous one; [pid: %d, tid: %d, name: %s, event_count: %d]", 
+				post_error(trace,
+					"Woah, time-travel? You just had a begin event that started before a previous one; [pid: %d, tid: %d, name: %s, event_count: %d]",
 					0, thread.id, name_str, trace.event_count)
 				return .Failure
 			}

@@ -1,7 +1,6 @@
 package main
 
 import "base:intrinsics"
-import "core:mem"
 import "core:math/rand"
 import "core:math"
 import "core:fmt"
@@ -120,7 +119,6 @@ tens_fmt :: proc(x: u64, allocator := context.temp_allocator) -> string {
 		return strings.clone("0", allocator)
 	}
 
-	tmp := x
 	pos := 0
 	for tmp := x; tmp != 0; pos += 1 {
 		val_buf[pos] = chars[tmp % 10]
@@ -418,7 +416,7 @@ u64_to_hexstr :: proc(buf: []byte, val: u64) -> string {
 	return string(buf[i:])
 }
 
-// this *shouldn't* be called with 0-len strings. 
+// this *shouldn't* be called with 0-len strings.
 // The current JSON parser enforces it due to the way primitives are parsed
 // We reject NaNs, Infinities, and Exponents in this house.
 parse_f64 :: proc(str: string) -> (ret: f64, ok: bool) #no_bounds_check {

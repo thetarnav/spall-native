@@ -1,7 +1,5 @@
 package main
 
-import "core:fmt"
-import "core:mem"
 import "core:hash"
 import "core:math/rand"
 import "core:math/linalg/glsl"
@@ -226,7 +224,7 @@ adjust :: proc(c: FVec3, by: f32) -> FVec3 {
 get_node_color :: proc(trace: ^Trace, node: ^ChunkNode) -> FVec3 {
 	avg_color := FVec3{}
 	collected_weight : i64 = 0
-	for wi, idx in node.p {
+	for wi in node.p {
 		avg_color += trace.color_choices[wi.idx] * f32(wi.weight)
 		collected_weight += wi.weight
 	}

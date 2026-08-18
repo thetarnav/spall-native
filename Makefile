@@ -2,9 +2,11 @@
 
 ODIN ?= odin
 
-VET_FLAGS =   -vet                \
-              -strict-style       \
-              -warnings-as-errors
+VET_FLAGS =   -strict-style         \
+              -warnings-as-errors   \
+              -vet-unused           \
+              -vet-unused-variables \
+              -vet-unused-imports
 
 COLLECTION =  -collection:formats=formats
 

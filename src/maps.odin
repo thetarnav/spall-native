@@ -1,7 +1,5 @@
 package main
 
-import "base:runtime"
-import "core:fmt"
 import "core:hash"
 import "core:strings"
 import "core:slice"
@@ -24,7 +22,7 @@ vh_init :: proc(allocator := context.allocator) -> ValHash {
 	for i in 0..<len(v.hashes) {
 		v.hashes[i] = -1
 	}
-	
+
 	v.resize_threshold = i64((3 * len(v.hashes)) / 4)
 	return v
 }
@@ -175,7 +173,7 @@ km_init :: proc() -> KeyMap {
 
 // lol, fibhash win
 km_hash :: proc "contextless" (key: string) -> u32 {
-	return u32(key[0]) * 2654435769 
+	return u32(key[0]) * 2654435769
 }
 
 // expects that we only get static strings

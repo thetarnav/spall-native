@@ -2,20 +2,29 @@
 
 package main
 
-import "core:fmt"
 import "core:strings"
 import NS "core:sys/darwin/Foundation"
 
-platform_pre_init :: proc() {
-	velocity_multiplier = -15
+darwin_clipboard_text: string
+
+platform_clipboard_get :: proc() -> string { return strings.clone(darwin_clipboard_text) }
+platform_clipboard_set :: proc(text: string) {
+	if len(darwin_clipboard_text) > 0 { delete(darwin_clipboard_text) }
+	darwin_clipboard_text = strings.clone(text)
 }
-platform_post_init :: proc() {
-	user_defaults := NS.UserDefaults.standardUserDefaults()
-	flag_str := NS.String.alloc()->initWithOdinString("AppleMomentumScrollSupported")
-	user_defaults->setBoolForKey(true, flag_str)
+
+// Normalize the result of an NSOpenPanel selection. A canceled panel and an
+// unexpected empty selection are both recoverable service failures.
+darwin_dialog_result :: proc(accepted: bool, path: string) -> (string, bool) {
+	return platform_dialog_result(accepted, path)
 }
-platform_dpi_hack :: proc() -> f64 {
-	return -1
+
+darwin_dialog_path_result :: proc(accepted: bool, path_cstr: cstring) -> (string, bool) {
+	if !accepted || path_cstr == nil {
+		return "", false
+	}
+	path := string(path_cstr)
+	return darwin_dialog_result(true, path)
 }
 
 open_file_dialog :: proc() -> (string, bool) {
@@ -29,14 +38,23 @@ open_file_dialog :: proc() -> (string, bool) {
 		urls := panel->URLs()
 		ret_count := urls->count()
 		if ret_count != 1 {
-			return "", false
+			return darwin_dialog_result(false, "")
 		}
 
 		url := urls->objectAs(0, ^NS.URL)
-		return strings.clone_from_cstring(url->fileSystemRepresentation()), true
+		if url == nil {
+			return darwin_dialog_result(false, "")
+		}
+
+		path_cstr := url->fileSystemRepresentation()
+		if path_cstr == nil {
+			return darwin_dialog_result(false, "")
+		}
+
+		return darwin_dialog_path_result(true, path_cstr)
 	}
 
-	return "", false
+	return darwin_dialog_result(false, "")
 }
 
 foreign import abi "system:c++abi"

@@ -1,11 +1,8 @@
 package main
 
-import "core:os"
 import "core:fmt"
 import "core:strings"
 import "core:slice"
-import "core:encoding/varint"
-import "core:reflect"
 
 Sections :: struct {
 	debug_str:   []u8,
@@ -141,7 +138,7 @@ Dw_At :: enum {
 	const_val          = 0x1c,
 	containing_type    = 0x1d,
 	default_type       = 0x1e,
-	inline              = 0x20,
+	inline             = 0x20,
 	is_optional        = 0x21,
 	lower_bound        = 0x22,
 	producer           = 0x25,
@@ -570,7 +567,6 @@ init_abbrevs :: proc(ctx: ^DWARF_Context, au_offset_map: ^map[int][dynamic]Abbre
 		entry.has_children = has_children > 0
 
 		// get the size of attributes list for an abbrev
-		attrs_start := rdr.idx
 		for rdr.idx < len(ctx.sections.abbrev) {
 			attr_id := stream_uleb(&rdr) or_return
 			form_id := stream_uleb(&rdr) or_return
@@ -909,7 +905,6 @@ parse_die :: proc(ctx: ^DWARF_Context, rdr: ^Stream_Context, abbrevs: []Abbrev_U
 }
 
 parse_range_table :: proc(ctx: ^DWARF_Context, cu: ^CU_Unit, val: Attr_Data, sym_idx: u64, bucket: ^Func_Bucket, text_skew: u64) -> (ok: bool) {
-	new_low := max(u64)
 
 	ranges_off : u64 = 0
 	#partial switch v in val {
@@ -960,7 +955,7 @@ parse_range_table :: proc(ctx: ^DWARF_Context, cu: ^CU_Unit, val: Attr_Data, sym
 			case .startx_endx:
 				start_idx := stream_uleb(&rdr) or_return
 				end_idx   := stream_uleb(&rdr) or_return
-				
+
 				low_pc := read_debug_addr(ctx, cu, start_idx) or_return
 				high_pc := read_debug_addr(ctx, cu, end_idx) or_return
 
@@ -987,7 +982,7 @@ parse_range_table :: proc(ctx: ^DWARF_Context, cu: ^CU_Unit, val: Attr_Data, sym
 			case .start_end:
 				low_pc := stream_val(&rdr, u64) or_return
 				high_pc := stream_val(&rdr, u64) or_return
-				
+
 				add_func(bucket, sym_idx, low_pc, high_pc, text_skew)
 
 			case .start_length:
@@ -995,7 +990,7 @@ parse_range_table :: proc(ctx: ^DWARF_Context, cu: ^CU_Unit, val: Attr_Data, sym
 				length := stream_uleb(&rdr) or_return
 
 				add_func(bucket, sym_idx, addr, addr + length, text_skew)
-				
+
 			case:
 				fmt.printf("unhandled range type: %v\n", type)
 				assert(false)
@@ -1011,7 +1006,6 @@ parse_range_table :: proc(ctx: ^DWARF_Context, cu: ^CU_Unit, val: Attr_Data, sym
 		ranges := ctx.sections.ranges[ranges_off:]
 		rdr := stream_init(ranges)
 
-		i := 0
 		still_scanning := true
 		for still_scanning {
 			low_pc := stream_val(&rdr, u64) or_return
@@ -1025,7 +1019,7 @@ parse_range_table :: proc(ctx: ^DWARF_Context, cu: ^CU_Unit, val: Attr_Data, sym
 			if low_pc == max(u64) {
 				func_base_addr = high_pc
 			}
-			
+
 			add_func(bucket, sym_idx, func_base_addr + low_pc, func_base_addr + high_pc, text_skew)
 		}
 	case:
@@ -1121,7 +1115,7 @@ parse_cu_header :: proc(ctx: ^DWARF_Context, rdr: ^Stream_Context) -> (out_hdr: 
 }
 
 cleanup_au_offsets :: proc(au_off_map: ^map[int][dynamic]Abbrev_Unit) {
-	for k, v in au_off_map {
+	for _, v in au_off_map {
 		for au in v {
 			delete(au.attrs)
 		}
@@ -1139,7 +1133,6 @@ cleanup_cu_files_list :: proc(cu_files_list: ^[dynamic]CU_Files_Unit) {
 }
 
 process_line_info :: proc(trace: ^Trace, ctx: ^DWARF_Context, cu_files_list: ^[dynamic]CU_Files_Unit, cu_file_map: ^map[CU_File_Entry]string) -> bool {
-	version : u16 = 0
 
 	rdr := stream_init(ctx.sections.line)
 	fmt.printf("DWARF: parsing debug_line\n")
@@ -1147,9 +1140,9 @@ process_line_info :: proc(trace: ^Trace, ctx: ^DWARF_Context, cu_files_list: ^[d
 		cu_start := rdr.idx
 
 		unit_length := stream_val(&rdr, u32) or_return
-		if unit_length == 0xFFFF_FFFF { 
+		if unit_length == 0xFFFF_FFFF {
 			fmt.printf("Only supporting DWARF32 for now!\n")
-			return false 
+			return false
 		}
 		if unit_length == 0 { break }
 
@@ -1311,9 +1304,9 @@ process_line_info :: proc(trace: ^Trace, ctx: ^DWARF_Context, cu_files_list: ^[d
 					break
 				}
 
-				dir_idx       := stream_uleb(&rdr) or_return
-				last_modified := stream_uleb(&rdr) or_return
-				file_size     := stream_uleb(&rdr) or_return
+				dir_idx := stream_uleb(&rdr) or_return
+				_        = stream_uleb(&rdr) or_return
+				_        = stream_uleb(&rdr) or_return
 
 				non_zero_append(&cu.file_table, File_Unit{name = string(cstr_file_name), dir_idx = int(dir_idx)})
 			}
@@ -1334,7 +1327,7 @@ process_line_info :: proc(trace: ^Trace, ctx: ^DWARF_Context, cu_files_list: ^[d
 	}
 
 	fmt.printf("DWARF: processing line info tables\n")
-	for &cu, idx in cu_files_list {
+	for &cu in cu_files_list {
 		line_table := &cu.line_table
 
 		lm_state := Line_Machine{}
@@ -1346,7 +1339,7 @@ process_line_info :: proc(trace: ^Trace, ctx: ^DWARF_Context, cu_files_list: ^[d
 
 			op := Dw_LNS(op_byte)
 			if op == .extended {
-				op_size := stream_uleb(&rdr) or_return
+				_ = stream_uleb(&rdr) or_return
 				tmp := stream_val(&rdr, u8) or_return
 				real_op := Dw_Line(tmp)
 
@@ -1479,9 +1472,9 @@ load_dwarf :: proc(trace: ^Trace, sections: ^Sections, bucket: ^Func_Bucket, tex
 		rdr := stream_init(sections.info, cur_cu_offset)
 
 		unit_length := stream_val(&rdr, u32) or_return
-		if unit_length == 0xFFFF_FFFF { 
+		if unit_length == 0xFFFF_FFFF {
 			fmt.printf("Only supporting DWARF32 for now!\n")
-			return false 
+			return false
 		}
 		if unit_length == 0 { break }
 		next_offset := 4 + unit_length
@@ -1507,8 +1500,6 @@ load_dwarf :: proc(trace: ^Trace, sections: ^Sections, bucket: ^Func_Bucket, tex
 
 		next_cu_offset := cur_cu_offset + int(next_offset)
 		for rdr.idx < next_cu_offset {
-			block_offset := rdr.idx
-			//dump_toggle = block_offset == 0x000012d9
 
 			clear(&attr_scratch)
 			clear(&attr_scratch2)
@@ -1613,7 +1604,6 @@ load_dwarf :: proc(trace: ^Trace, sections: ^Sections, bucket: ^Func_Bucket, tex
 					break
 				}
 				sym_idx := in_get(&trace.intern, &trace.string_block, string(func_name))
-				symbol_addr := 0
 
 				// determine function range
 				low_pc, ok := get_attr_addr(&ctx, &cu, attr_scratch[:], .low_pc)
