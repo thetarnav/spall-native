@@ -4,14 +4,6 @@ package main
 import "core:strings"
 import "core:sys/windows"
 
-windows_clipboard_text: string
-
-platform_clipboard_get :: proc() -> string { return strings.clone(windows_clipboard_text) }
-platform_clipboard_set :: proc(text: string) {
-	if len(windows_clipboard_text) > 0 { delete(windows_clipboard_text) }
-	windows_clipboard_text = strings.clone(text)
-}
-
 // Convert a dialog buffer without exposing the Windows dialog API to callers.
 // Keeping this separate also makes path conversion testable without opening a dialog.
 windows_path_from_utf16 :: proc(path_buf: []u16) -> (string, bool) {

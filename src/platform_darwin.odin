@@ -5,14 +5,6 @@ package main
 import "core:strings"
 import NS "core:sys/darwin/Foundation"
 
-darwin_clipboard_text: string
-
-platform_clipboard_get :: proc() -> string { return strings.clone(darwin_clipboard_text) }
-platform_clipboard_set :: proc(text: string) {
-	if len(darwin_clipboard_text) > 0 { delete(darwin_clipboard_text) }
-	darwin_clipboard_text = strings.clone(text)
-}
-
 // Normalize the result of an NSOpenPanel selection. A canceled panel and an
 // unexpected empty selection are both recoverable service failures.
 darwin_dialog_result :: proc(accepted: bool, path: string) -> (string, bool) {

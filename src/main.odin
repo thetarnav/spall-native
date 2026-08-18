@@ -422,7 +422,7 @@ main :: proc() {
 					}
 				case .V:
 					if capture_text && (ctrl_down || super_down) {
-						path := get_clipboard(&gfx)
+						path := get_clipboard()
 						defer delete(path)
 						strings.builder_reset(&selected_box.b)
 						strings.write_string(&selected_box.b, path)

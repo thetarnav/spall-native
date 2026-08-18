@@ -17,16 +17,11 @@ platform_dialog_result :: proc(accepted: bool, value: string) -> (string, bool) 
 	return strings.clone(value), true
 }
 
-// Compatibility wrappers retain the signatures used by UI callers while
-// keeping service state independent from Karl2D's renderer state.
-get_clipboard :: proc(gfx: ^GFX_Context) -> string {
-	_ = gfx
-	return platform_clipboard_get()
+get_clipboard :: proc() -> string {
+	return ""
 }
 
-set_clipboard :: proc(gfx: ^GFX_Context, text: string) {
-	_ = gfx
-	platform_clipboard_set(text)
+set_clipboard :: proc(text: string) {
 }
 
 mouse_down :: proc(x, y: f64) {

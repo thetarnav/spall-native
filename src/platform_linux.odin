@@ -7,29 +7,6 @@ import "core:strings"
 import "core:sys/linux"
 import "core:sys/posix"
 
-// State retained by Linux clipboard/drop services, independent of Karl2D's
-// frontend window and renderer lifecycle.
-Linux_Platform_Services :: struct {
-	clipboard_text: string,
-	dropped_file:   string,
-	dnd_src_window: uintptr,
-	dnd_format:     uintptr,
-	dnd_version:    int,
-}
-
-linux_services: Linux_Platform_Services
-
-// Clipboard remains a platform service, not Karl2D state. The native X11
-// owner/request protocol can replace these two seams without changing UI code.
-platform_clipboard_get :: proc() -> string {
-	return strings.clone(linux_services.clipboard_text)
-}
-
-platform_clipboard_set :: proc(text: string) {
-	if len(linux_services.clipboard_text) > 0 { delete(linux_services.clipboard_text) }
-	linux_services.clipboard_text = strings.clone(text)
-}
-
 // dialog_output_result converts Zenity's stdout into the application result.
 // Empty output is the normal result for cancellation or an unavailable dialog.
 dialog_output_result :: proc(output: []u8) -> (path: string, ok: bool) {
