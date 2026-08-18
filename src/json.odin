@@ -1,10 +1,8 @@
 package main
 
 import "core:fmt"
-import "core:strings"
 import "core:slice"
 import "core:mem"
-import "core:c"
 import "core:encoding/json"
 import "core:os"
 
@@ -119,12 +117,12 @@ Field :: struct {
 	name: string,
 	type: FieldType,
 }
-fields := [?]Field{ 
-	{"args", .Args}, 
-	{"dur", .Dur}, 
-	{"name", .Name}, 
+fields := [?]Field{
+	{"args", .Args},
+	{"dur", .Dur},
+	{"name", .Name},
 	{"pid", .Pid},
-	{"tid", .Tid}, 
+	{"tid", .Tid},
 	{"ts", .Ts},
 	{"ph", .Ph},
 	{"s", .S},
@@ -167,71 +165,71 @@ init_json_parser :: proc() -> JSONParser {
 }
 
 dfa := [?][10]PS{
-	// Any,    ArrOpen, ArrClose,     
+	// Any,    ArrOpen, ArrClose,
 	// Quote,  ObjOpen, ObjClose,
 	// Escape, Colon,   Comma, Primitive
 
 	// starting
 	[?]PS{
-		PS.Starting, PS.ArrOpen, PS.ArrClose, 
-		PS.String,   PS.ObjOpen, PS.ObjClose, 
+		PS.Starting, PS.ArrOpen, PS.ArrClose,
+		PS.String,   PS.ObjOpen, PS.ObjClose,
 		PS.Escape,   PS.Colon,   PS.Comma, PS.Primitive,
 	},
 
 	// string
 	[?]PS{
-		PS.String,   PS.String, PS.String, 
-		PS.Starting, PS.String, PS.String, 
+		PS.String,   PS.String, PS.String,
+		PS.Starting, PS.String, PS.String,
 		PS.Escape,   PS.String, PS.String, PS.String,
 	},
 
 	// escape
 	[?]PS{
-		PS.String, PS.String, PS.String, 
-		PS.String, PS.String, PS.String, 
+		PS.String, PS.String, PS.String,
+		PS.String, PS.String, PS.String,
 		PS.String, PS.String, PS.String, PS.String,
 	},
 
 	// colon
 	[?]PS{
-		PS.Starting, PS.ArrOpen, PS.ArrClose, 
-		PS.String,   PS.ObjOpen, PS.ObjClose, 
+		PS.Starting, PS.ArrOpen, PS.ArrClose,
+		PS.String,   PS.ObjOpen, PS.ObjClose,
 		PS.Escape,   PS.Colon,   PS.Comma,  PS.Primitive,
 	},
 
 	// []{}
 	[?]PS{
-		PS.Starting, PS.ArrOpen,  PS.ArrClose, 
-		PS.String,   PS.ObjOpen,  PS.ObjClose, 
+		PS.Starting, PS.ArrOpen,  PS.ArrClose,
+		PS.String,   PS.ObjOpen,  PS.ObjClose,
 		PS.Escape,   PS.Colon,    PS.Comma, PS.Primitive,
 	},
 	[?]PS{
-		PS.Starting, PS.ArrOpen,  PS.ArrClose, 
-		PS.String,   PS.ObjOpen,  PS.ObjClose, 
+		PS.Starting, PS.ArrOpen,  PS.ArrClose,
+		PS.String,   PS.ObjOpen,  PS.ObjClose,
 		PS.Escape,   PS.Colon,    PS.Comma, PS.Primitive,
 	},
 	[?]PS{
-		PS.Starting, PS.ArrOpen,  PS.ArrClose, 
-		PS.String,   PS.ObjOpen,  PS.ObjClose, 
+		PS.Starting, PS.ArrOpen,  PS.ArrClose,
+		PS.String,   PS.ObjOpen,  PS.ObjClose,
 		PS.Escape,   PS.Colon,    PS.Comma, PS.Primitive,
 	},
 	[?]PS{
-		PS.Starting, PS.ArrOpen,  PS.ArrClose, 
-		PS.String,   PS.ObjOpen,  PS.ObjClose, 
+		PS.Starting, PS.ArrOpen,  PS.ArrClose,
+		PS.String,   PS.ObjOpen,  PS.ObjClose,
 		PS.Escape,   PS.Colon,    PS.Comma, PS.Primitive,
 	},
 
 	// ,
 	[?]PS{
-		PS.Starting, PS.ArrOpen,  PS.ArrClose, 
-		PS.String,   PS.ObjOpen,  PS.ObjClose, 
+		PS.Starting, PS.ArrOpen,  PS.ArrClose,
+		PS.String,   PS.ObjOpen,  PS.ObjClose,
 		PS.Escape,   PS.Colon,    PS.Comma, PS.Primitive,
 	},
 
 	// -, ., 0-9, t, f, n
 	[?]PS{
-		PS.Starting, PS.ArrOpen,  PS.ArrClose, 
-		PS.Starting,  PS.ObjOpen,  PS.ObjClose, 
+		PS.Starting, PS.ArrOpen,  PS.ArrClose,
+		PS.Starting,  PS.ObjOpen,  PS.ObjClose,
 		PS.Starting,  PS.Starting, PS.Comma, PS.Primitive,
 	},
 }
@@ -305,7 +303,7 @@ the_skipper :: proc(trace: ^Trace, jp: ^JSONParser, chunk: []u8) -> JSONState {
 		ch := chunk[chunk_pos(p)]
 
 		switch ch {
-		case '"': 
+		case '"':
 			start := real_pos(p)
 
 			key, state := skip_string(trace, chunk)
@@ -405,35 +403,35 @@ process_key_value :: proc(trace: ^Trace, ev: ^TempEvent, key: FieldType, value: 
 		case 'M': ev.type = .Metadata
 		case 'P': ev.type = .Sample
 		}
-	case .Dur: 
+	case .Dur:
 		dur, ok := parse_f64(value)
 		if !ok {
 			post_error(trace, "Invalid duration!")
 			return false
 		}
 		ev.duration = i64(dur * 1000 * trace.stamp_scale)
-	case .Ts: 
+	case .Ts:
 		ts, ok := parse_f64(value)
 		if !ok {
 			post_error(trace, "Invalid timestamp!")
 			return false
 		}
 		ev.timestamp = i64(ts * 1000 * trace.stamp_scale)
-	case .Tid: 
+	case .Tid:
 		tid, ok := parse_u32(value)
 		if !ok {
 			post_error(trace, "Invalid tid!")
 			return false
 		}
 		ev.thread_id = tid
-	case .Pid: 
+	case .Pid:
 		pid, ok := parse_u32(value)
 		if !ok {
 			post_error(trace, "Invalid pid!")
 			return false
 		}
 		ev.process_id = pid
-	case .S: 
+	case .S:
 		if len(value) != 1 {
 			post_error(trace, "Invalid scope!")
 			return false
@@ -451,7 +449,7 @@ process_key_value :: proc(trace: ^Trace, ev: ^TempEvent, key: FieldType, value: 
 }
 
 process_sample :: proc(trace: ^Trace, jp: ^JSONParser, ev: ^TempEvent) -> bool {
-	p := &trace.parser
+
 	new_event: Event = ---
 
 	meta_str := in_getstr(&trace.string_block, ev.id)
@@ -476,7 +474,7 @@ process_sample :: proc(trace: ^Trace, jp: ^JSONParser, ev: ^TempEvent) -> bool {
 		}
 
 		p_idx := setup_pid(trace, ev.process_id)
-		t_idx := setup_tid(trace, p_idx, ev.thread_id)
+		_      = setup_tid(trace, p_idx, ev.thread_id)
 
 		ps := ProfileState{
 			pid = ev.process_id,
@@ -503,8 +501,6 @@ process_sample :: proc(trace: ^Trace, jp: ^JSONParser, ev: ^TempEvent) -> bool {
 			jp.profiles[profile_key] = ps
 			profile, _ = &jp.profiles[profile_key]
 		}
-
-		thread := &trace.processes[p_idx].threads[t_idx]
 
 		chunk := ChunkArgs{}
 		err := json.unmarshal_string(in_getstr(&trace.string_block, ev.args), &chunk, json.DEFAULT_SPECIFICATION, context.temp_allocator)
@@ -569,7 +565,7 @@ process_sample :: proc(trace: ^Trace, jp: ^JSONParser, ev: ^TempEvent) -> bool {
 				}
 
 				cycle_count := 0
-				nodes_to_begin: [dynamic]i64 
+				nodes_to_begin: [dynamic]i64
 				if ancestor_idx < 0 {
 					nodes_to_begin = make([dynamic]i64, context.temp_allocator)
 					cur_node_id := cur_sample_id
@@ -597,7 +593,6 @@ process_sample :: proc(trace: ^Trace, jp: ^JSONParser, ev: ^TempEvent) -> bool {
 
 				for i := profile.id_stack.len - 1; i > ancestor_idx; i -= 1 {
 					sample := stack_pop_back(&profile.id_stack)
-					node := profile.nodes[sample.node_id]
 					json_patch_end(trace, p_idx, t_idx, sample.event_idx, profile.time)
 				}
 
@@ -788,7 +783,6 @@ process_next_json_event :: proc(trace: ^Trace, jp: ^JSONParser, chunk: []u8) -> 
 			in_key = true
 			depth_count += 1
 		case .ObjClose:
-			in_key := false
 			depth_count -= 1
 
 			if depth_count == 1 && key_type == .Args {
@@ -919,7 +913,6 @@ json_parse :: proc (trace: ^Trace, fd: ^os.File) -> bool {
 		for i := profile.id_stack.len - 1; i >= 0; i -= 1 {
 			sample := stack_pop_back(&profile.id_stack)
 			json_patch_end(trace, p_idx, t_idx, sample.event_idx, profile.time)
-			node := profile.nodes[sample.node_id]
 		}
 	}
 
@@ -1102,8 +1095,8 @@ json_process_events :: proc(trace: ^Trace) {
 }
 
 json_generate_selftimes :: proc(trace: ^Trace) {
-	for proc_v, p_idx in trace.processes {
-		for tm, t_idx in proc_v.threads {
+	for proc_v in trace.processes {
+		for tm in proc_v.threads {
 
 			// skip the bottom rank, it's already set up correctly
 			if len(tm.depths) == 1 {
@@ -1116,7 +1109,7 @@ json_generate_selftimes :: proc(trace: ^Trace) {
 					continue
 				}
 
-				for &ev, e_idx in depth.events {
+				for &ev in depth.events {
 					depth := &tm.depths[d_idx+1]
 					tree := &depth.tree
 

@@ -2,10 +2,7 @@ package main
 
 import "core:bytes"
 import "core:fmt"
-import "core:math"
-import "core:mem"
 import "core:os"
-import "core:slice"
 
 /*
 Handy References:
@@ -172,14 +169,12 @@ load_pe32 :: proc(trace: ^Trace, exec_buffer: []u8, bucket: ^Func_Bucket) -> boo
 		pe_hdr.coff_header.symbol_table_offset +
 		(pe_hdr.coff_header.symbol_count * size_of(COFF_Symbol))
 	string_table := exec_buffer[string_table_offset:]
-	strtab_size := slice_to_type(string_table, u32) or_return
 
 	section_buffer := rdr.buffer[rdr.idx:]
 	section_bytes := (size_of(COFF_Section_Header) * int(pe_hdr.coff_header.section_count))
 
 	might_have_pdb := true
 	debug_rva := pe_hdr.optional_header.data_directories[DEBUG_DIR].virtual_addr
-	debug_size := pe_hdr.optional_header.data_directories[DEBUG_DIR].size
 	if debug_rva == 0 {
 		might_have_pdb = false
 	}

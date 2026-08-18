@@ -3,7 +3,6 @@ package main
 import "core:thread"
 import "core:sync"
 import "core:fmt"
-import "core:prof/spall"
 
 Pool_TaskProc :: proc(pool: ^Pool, data: rawptr)
 Pool_Task :: struct {
@@ -228,6 +227,7 @@ pool_destroy :: proc(pool: ^Pool) {
 		sync.atomic_add(&pool.tasks_available, 1)
 		sync.futex_broadcast(&pool.tasks_available)
 		thread.join(pool.threads[i].thread)
+		thread.destroy(pool.threads[i].thread)
 	}
 
 	when GOOD_BOY_MODE {
@@ -242,6 +242,7 @@ Loader_TaskProc :: proc(loader: ^Loader, data: rawptr)
 Loader_Task :: struct {
 	do_work: Loader_TaskProc,
 	args: rawptr,
+	cleanup: proc(data: rawptr),
 }
 
 Loader :: struct {
@@ -269,16 +270,29 @@ loader_worker :: proc(ptr: rawptr) {
 
 	pool_init(&loader.pool, loader.thread_count)
 
-	for loader.running {
+	for sync.atomic_load(&loader.running) {
 		has_task := sync.atomic_load(&loader.has_task)
 		if has_task == 1 {
 			loader.task.do_work(loader, loader.task.args)
+			loader.task = Loader_Task{}
 			sync.atomic_store(&loader.has_task, 0)
 			sync.futex_signal(&loader.has_task)
 		}
 
-		if !loader.running { break }
+		if !sync.atomic_load(&loader.running) { break }
 		wait_for_change(&loader.has_task, 0)
+	}
+
+	// A task may be published while the loader is waiting. Shutdown owns the
+	// task slot after the worker observes running == false; reclaim it before
+	// tearing down the pool so its state cannot outlive the loader.
+	if sync.atomic_load(&loader.has_task) == 1 {
+		task := loader.task
+		sync.atomic_store(&loader.has_task, 0)
+		if task.cleanup != nil {
+			task.cleanup(task.args)
+		}
+		loader.task = Loader_Task{}
 	}
 
 	pool_wait(&loader.pool)
@@ -303,12 +317,30 @@ loader_set_task :: proc(loader: ^Loader, task: Loader_Task) {
 	sync.futex_signal(&loader.has_task)
 }
 
+loader_discard_pending_task :: proc(loader: ^Loader) {
+	if sync.atomic_load(&loader.has_task) != 1 {
+		return
+	}
+
+	task := loader.task
+	sync.atomic_store(&loader.has_task, 0)
+	if task.cleanup != nil {
+		task.cleanup(task.args)
+	}
+	loader.task = Loader_Task{}
+}
+
 loader_wait :: proc(loader: ^Loader) {
 	wait_for_change(&loader.has_task, 1)
 }
 
 loader_destroy :: proc(loader: ^Loader) {
-	loader.running = false
+	if loader.thrd == nil {
+		loader_discard_pending_task(loader)
+		return
+	}
+
+	sync.atomic_store(&loader.running, false)
 	sync.atomic_store(&loader.has_task, 1)
 	sync.futex_signal(&loader.has_task)
 
@@ -318,4 +350,7 @@ loader_destroy :: proc(loader: ^Loader) {
 	}
 
 	thread.join(loader.thrd)
+	thread.destroy(loader.thrd)
+	loader.thrd = nil
+	loader_discard_pending_task(loader)
 }

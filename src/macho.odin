@@ -115,7 +115,7 @@ guess_debug_path :: proc(file_path: string) -> string {
 	strings.write_string(&b, file_path)
 	strings.write_string(&b, ".dSYM/Contents/Resources/DWARF/")
 	strings.write_string(&b, file_base)
-	
+
 	return strings.to_string(b)
 }
 
@@ -200,7 +200,6 @@ load_macho_symbols :: proc(trace: ^Trace, _exec_buffer: []u8, bucket: ^Func_Buck
 	}
 
 	tmp_buffer := make([]u8, 1024*1024, context.temp_allocator)
-	symbol_table_bytes := exec_buffer[symtab_header.symbol_table_offset:]
 	string_table_bytes := exec_buffer[symtab_header.string_table_offset:]
 	for i := 0; i < int(symtab_header.symbol_count); i += 1 {
 		symbol_buffer := exec_buffer[int(symtab_header.symbol_table_offset)+(i * size_of(Mach_Symbol_Entry_64)):]
@@ -211,7 +210,7 @@ load_macho_symbols :: proc(trace: ^Trace, _exec_buffer: []u8, bucket: ^Func_Buck
 			continue
 		}
 
-		demangled_name, ok2 := demangle_symbol(symbol_name, tmp_buffer)
+		_, ok2 := demangle_symbol(symbol_name, tmp_buffer)
 		if !ok2 {
 			return false
 		}
@@ -246,7 +245,7 @@ load_macho_debug :: proc(trace: ^Trace, exec_buffer: []u8, bucket: ^Func_Bucket)
 	text_segment_offset : u64 = 0
 	read_idx := size_of(Mach_Header_64)
 	for read_idx < len(exec_buffer) {
-		current_buffer := exec_buffer[read_idx:]
+
 		cmd := slice_to_type(exec_buffer[read_idx:], Mach_Load_Command) or_return
 		if cmd.size == 0 {
 			return false

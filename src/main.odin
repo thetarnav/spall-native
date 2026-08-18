@@ -1,47 +1,39 @@
 package main
 
 import "base:intrinsics"
-import "base:runtime"
 
-import "core:fmt"
 import "core:time"
 import "core:os"
-import "core:mem"
 import "core:strings"
 import "core:math"
-import "core:slice"
 import "core:flags"
 import "core:container/queue"
-import "core:container/lru"
 import "core:unicode/utf8"
 import "core:prof/spall"
 
-import glm "core:math/linalg/glsl"
+import k2 "../karl2d"
 
-import gl "vendor:OpenGL"
-import stbtt "vendor:stb/truetype"
 
 // input state
-is_mouse_down  := false
-was_mouse_down := false
-clicked        := false
-double_clicked := false
-clicked_t      : time.Tick
-mouse_up_now   := false
-is_hovering    := false
+is_mouse_down:       bool
+was_mouse_down:      bool
+clicked:             bool
+double_clicked:      bool
+clicked_t:           time.Tick
+mouse_up_now:        bool
+is_hovering:         bool
 
-alt_down       := false
-shift_down     := false
-ctrl_down      := false
-super_down     := false
+alt_down:            bool
+shift_down:          bool
+ctrl_down:           bool
+super_down:          bool
 
-last_mouse_pos := Vec2{}
-mouse_pos      := Vec2{}
-clicked_pos    := Vec2{}
-scroll_val_y: f64 = 0
-velocity_multiplier: f64 = 0
+last_mouse_pos:      Vec2
+mouse_pos:           Vec2
+clicked_pos:         Vec2
+scroll_val_y:        f64
 
-cam := Camera{Vec2{0, 0}, Vec2{0, 0}, 0, 1, 1}
+cam := Camera{0, 0, 0, 1, 1}
 
 // selection state
 clicked_on_rect := false
@@ -53,73 +45,63 @@ rendered_rect_tooltip := false
 
 did_pan := false
 
-stat_sort_type := SortState.SelfTime
-stat_sort_descending := true
-resort_stats := false
+stat_sort_type:       SortState
+stat_sort_descending: bool = true
+resort_stats:         bool
 
 // drawing state
 colormode      := ColorMode.Dark
 
 // font data
-dpr:       f64 = 1
-p_height:  f64 = 14
-h1_height: f64 = 18
-h2_height: f64 = 16
-em:        f64 = p_height
+dpr:          f64 = 1
+p_height:     f64 = 14
+h1_height:    f64 = 18
+h2_height:    f64 = 16
+em:           f64 = p_height
 p_font_size:  f64 = p_height
 h1_font_size: f64 = h1_height
 h2_font_size: f64 = h2_height
-ch_width:   f64 = 0
-thread_gap: f64 = 8
+ch_width:     f64 = 0
+thread_gap:   f64 = 8
 
 build_hash := 0
 enable_debug := false
 fps_history: queue.Queue(f64)
-lru_text_cache: lru.Cache(Font_LRU_Key, Font_LRU_Text)
 
 
 fullscreen := false
 
-t               : f64
-multiselect_t   : f64
-greyanim_t      : f32
-greymotion      : f32
-frame_count     : int
+t:                f64
+multiselect_t:    f64
+greyanim_t:       f32
+greymotion:       f32
+frame_count:      int
 last_frame_count: int
-rect_count      : int
-bucket_count    : int
-was_sleeping    : bool
-awake           : bool
-random_seed     : u64
+was_sleeping:     bool
+awake:            bool
+random_seed:      u64
 
 // loading / trace state
-loader := Loader{}
-
-// gl-rect nonsense
-idx_pos := [?]glm.vec2{
-	{0.0, 0.0},
-	{1.0, 0.0},
-	{0.0, 1.0},
-	{1.0, 1.0},
-}
+loader: Loader
 
 ThreadSampleRunState :: struct {
-	trace: ^Trace,
-	ui_state: ^UIState,
+	trace:        ^Trace,
+	ui_state:     ^UIState,
 	program_name: string,
 	program_path: string,
 	program_args: string,
 }
 
-threaded_sample_start :: proc(loader: ^Loader, data: rawptr) {
-	state := cast(^ThreadSampleRunState)(data)
+threaded_sample_start_cleanup :: proc(data: rawptr) {
+	if data != nil {
+		free((^ThreadSampleRunState)(data))
+	}
+}
 
-	trace := state.trace
-	ui_state := state.ui_state
-	program_name := state.program_name
-	program_args := state.program_args
-	program_path := state.program_path
-	free(state)
+threaded_sample_start :: proc(loader: ^Loader, data: rawptr) {
+	using state := (^ThreadSampleRunState)(data)
+
+	defer free(state)
 
 	// TODO replace me with something that respects quote-escapes
 	args := []string{}
@@ -157,7 +139,7 @@ start_sampling :: proc(loader: ^Loader, trace: ^Trace, ui_state: ^UIState, progr
 		program_args = program_args,
 	}
 
-	loader_set_task(loader, Loader_Task{threaded_sample_start, state})
+	loader_set_task(loader, Loader_Task{do_work = threaded_sample_start, args = state, cleanup = threaded_sample_start_cleanup})
 	return true
 }
 
@@ -166,7 +148,7 @@ spall_ctx: spall.Context
 
 SELF_TRACE    :: #config(SELF_TRACE, false)
 GOOD_BOY_MODE :: #config(GOOD_BOY_MODE, false)
-opt := Cmd_Options{}
+opt: Cmd_Options
 
 when SELF_TRACE {
 	@(instrumentation_enter)
@@ -181,14 +163,32 @@ when SELF_TRACE {
 }
 
 Cmd_Options :: struct {
-	file: string `args:"pos=0" usage:"Trace file to load"`,
-	terminal_mode: bool `args:"hidden, name=terminal-mode" usage:"Loads traces headlessly"`,
-	full_speed: bool `args:"hidden, name=full-speed" usage:"Disables power-limiter to max out framerate"`,
-	sample_exe: string `args:name=sample-exe" usage:"Sets sample exe path"`,
-	sample_path: string `args:name=sample-path" usage:"Sets sample exe target path"`,
-	sample_args: string `args:name=sample-args" usage:"Sets sample args"`,
-	exe_path: string `args:"name=exe-path" usage:"Overrides exe path for trace files"`,
-	pdb_path: string `args:"name=pdb-path" usage:"Overrides pdb path for trace files"`,
+	file:          string `args:"pos=0"                      usage:"Trace file to load"`,
+	terminal_mode: bool   `args:"hidden, name=terminal-mode" usage:"Loads traces headlessly"`,
+	full_speed:    bool   `args:"hidden, name=full-speed"    usage:"Disables power-limiter to max out framerate"`,
+	sample_exe:    string `args:"name=sample-exe"            usage:"Sets sample exe path"`,
+	sample_path:   string `args:"name=sample-path"           usage:"Sets sample exe target path"`,
+	sample_args:   string `args:"name=sample-args"           usage:"Sets sample args"`,
+	exe_path:      string `args:"name=exe-path"              usage:"Overrides exe path for trace files"`,
+	pdb_path:      string `args:"name=pdb-path"              usage:"Overrides pdb path for trace files"`,
+}
+
+// shutdown_runtime owns the application teardown order.  Loader workers and
+// trace storage must be gone before the frontend releases fonts and Karl2D.
+// Keeping this in one path also makes terminal and GUI early exits equivalent.
+shutdown_runtime :: proc(loader: ^Loader, trace: ^Trace, gfx: ^GFX_Context) {
+	if loader != nil {
+		loader_destroy(loader)
+	}
+
+	if trace != nil {
+		free_trace(trace)
+		free(trace)
+	}
+
+	if gfx != nil {
+		shutdown_context(gfx)
+	}
 }
 
 main :: proc() {
@@ -212,7 +212,7 @@ main :: proc() {
 
 	ui_state.textboxes[.ProgramInput] = init_textbox_state()
 	ui_state.textboxes[.CmdArgsInput] = init_textbox_state()
-	ui_state.textboxes[.PathInput] = init_textbox_state()
+	ui_state.textboxes[.PathInput]    = init_textbox_state()
 	first  := &ui_state.textboxes[.ProgramInput]
 	second := &ui_state.textboxes[.PathInput]
 	third  := &ui_state.textboxes[.CmdArgsInput]
@@ -258,83 +258,23 @@ main :: proc() {
 	init_trace(trace)
 
 	if opt.terminal_mode {
+		// start_trace is an owned clone. load_trace transfers it to the worker
+		// on success and releases it itself when the request is rejected.
 		if !load_trace(&loader, trace, &ui_state, start_trace) {
+			shutdown_runtime(&loader, trace, nil)
 			return
 		}
-		loader_wait(&loader)
-		loader_destroy(&loader)
+		shutdown_runtime(&loader, trace, nil)
 		return
 	}
+	// start_trace ownership transfers to ThreadFileLoadState on submission.
 	load_trace(&loader, trace, &ui_state, start_trace)
 
 	set_color_mode(false, true)
 
-	gfx := GFX_Context{}
+	gfx: GFX_Context
 	width, height: f64
 	gfx, dpr, width, height = create_context("spall", 1280, 720)
-
-	gl.Enable(gl.BLEND)
-	gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
-	gl.Enable(gl.MULTISAMPLE)
-	gl.Enable(gl.FRAMEBUFFER_SRGB)
-
-	lru.init(&lru_text_cache, 1000)
-	lru_text_cache.on_remove = rm_text_cache
-
-	// Load statically packed fonts
-	sans_font := #load("../fonts/Montserrat-Regular.ttf")
-	mono_font := #load("../fonts/FiraMono-Regular.ttf")
-	icon_font := #load("../fonts/fontawesome-webfont.ttf")
-	fonts := [][]u8{ sans_font, mono_font, icon_font }
-	sizes := []f64{ p_height * dpr, h1_height * dpr, h2_height * dpr }
-
-	stbtt.InitFont(&font_map[FontType.DefaultFont], raw_data(sans_font), 0)
-	stbtt.InitFont(&font_map[FontType.MonoFont], raw_data(mono_font), 0)
-	stbtt.InitFont(&font_map[FontType.IconFont], raw_data(icon_font), 0)
-
-	font_size[FontSize.PSize] = cast(f32)sizes[0]
-	font_size[FontSize.H1Size] = cast(f32)sizes[1]
-	font_size[FontSize.H2Size] = cast(f32)sizes[2]
-
-	rect_program, rect_prog_ok := gl.load_shaders_source(rect_vert_src, rect_frag_src)
-	if !rect_prog_ok {
-		fmt.eprintln("Failed to create rect shader")
-		return
-	}
-
-	rect_uniforms := gl.get_uniforms_from_program(rect_program)
-	gl.UseProgram(rect_program)
-	u_dpr := rect_uniforms["u_dpr"].location
-	u_res := rect_uniforms["u_resolution"].location
-
-	vao: u32
-	gl.GenVertexArrays(1, &vao)
-	gl.BindVertexArray(vao)
-
-	// Set up dynamic rect buffer
-	rect_deets_buffer: u32
-	gl.GenBuffers(1, &rect_deets_buffer)
-	gl.BindBuffer(gl.ARRAY_BUFFER, rect_deets_buffer)
-
-	gl.EnableVertexAttribArray(u32(VertAttrs.RectPos))
-	gl.VertexAttribPointer(u32(VertAttrs.RectPos), 4, gl.FLOAT, false, size_of(DrawRect), offset_of(DrawRect, pos))
-	gl.VertexAttribDivisor(u32(VertAttrs.RectPos), 1)
-
-	gl.EnableVertexAttribArray(u32(VertAttrs.Color))
-	gl.VertexAttribPointer(u32(VertAttrs.Color), 4, gl.UNSIGNED_BYTE, true, size_of(DrawRect), offset_of(DrawRect, color))
-	gl.VertexAttribDivisor(u32(VertAttrs.Color), 1)
-
-	gl.EnableVertexAttribArray(u32(VertAttrs.UV))
-	gl.VertexAttribPointer(u32(VertAttrs.UV), 2, gl.FLOAT, false, size_of(DrawRect), offset_of(DrawRect, uv))
-	gl.VertexAttribDivisor(u32(VertAttrs.UV), 1)
-
-	// Set up rect points buffer
-	rect_points_buffer: u32
-	gl.GenBuffers(1, &rect_points_buffer)
-	gl.BindBuffer(gl.ARRAY_BUFFER, rect_points_buffer)
-	gl.BufferData(gl.ARRAY_BUFFER, len(idx_pos)*size_of(idx_pos[0]), raw_data(idx_pos[:]), gl.STATIC_DRAW)
-	gl.EnableVertexAttribArray(u32(VertAttrs.IdxPos))
-	gl.VertexAttribPointer(u32(VertAttrs.IdxPos), 2, gl.FLOAT, false, 0, 0)
 
 	ch_width = measure_text("a", .PSize, .MonoFont)
 
@@ -347,13 +287,13 @@ main :: proc() {
 	was_sleeping := false
 	main_loop: for {
 		defer {
-			clicked = false
-			double_clicked = false
-			is_hovering = false
-			was_mouse_down = false
-			mouse_up_now = false
+			clicked                  = false
+			double_clicked           = false
+			is_hovering              = false
+			was_mouse_down           = false
+			mouse_up_now             = false
 			ui_state.render_one_more = false
-			frame_count += 1
+			frame_count             += 1
 			free_all(context.temp_allocator)
 		}
 
@@ -364,7 +304,7 @@ main :: proc() {
 		dt := time.duration_seconds(time.tick_diff(last_tick, cur_tick))
 		last_tick = cur_tick
 
-		if queue.len(fps_history) > 100 { queue.pop_front(&fps_history) }
+		if queue.len(fps_history) > 100 do queue.pop_front(&fps_history)
 		queue.push_back(&fps_history, 1 / dt)
 
 		// prevent dt from going *too* nuts if we've just woken up
@@ -376,10 +316,10 @@ main :: proc() {
 		should_toggle_fullscreen := false
 
 		// if any of the textboxes are in focus, enable keyboard capture
-		capture_text := false
+		capture_text:    bool
 		selected_box_id: TextboxKind
-		selected_box: ^TextboxState = nil
-		for id, box in &ui_state.textboxes {
+		selected_box:    ^TextboxState
+		for id, box in ui_state.textboxes {
 			if box.focus {
 				capture_text = true
 				selected_box_id = id
@@ -391,140 +331,160 @@ main :: proc() {
 			selected_box = &ui_state.textboxes[selected_box_id]
 		}
 
-		ev := PlatformEvent{}
-		event_loop: for {
+		dpr = gfx.window_scale
+
+		events := get_events(&gfx, block=!awake) or_break main_loop
+		event_loop: for event in events {
+
 			if !awake {
-				ev = get_next_event(&gfx, true) // block for event
-				if ev.type == .None {
-					break event_loop
-				}
 				was_sleeping = true
-				awake = true
-			} else {
-				ev = get_next_event(&gfx, false) // don't block for event
-				if ev.type == .None {
-					break event_loop
-				}
+				awake        = true
 			}
 
-			#partial switch ev.type {
-				case .Exit: break main_loop
-				case .MouseMoved: {
-					mouse_moved(ev.x, ev.y)
-				}
-				case .MouseUp: {
-					if ev.mouse == .Left {
-						mouse_up(ev.x, ev.y)
-					}
-				}
-				case .MouseDown: {
-					if ev.mouse == .Left {
-						mouse_down(ev.x, ev.y)
-					}
-				}
-				case .Scroll: {
-					mouse_scroll(ev.y)
-				}
-				case .KeyDown: {
-					#partial switch ev.key {
-						case .LeftShift:    shift_down = true
-						case .RightShift:   shift_down = true
-						case .LeftControl:  ctrl_down = true
-						case .RightControl: ctrl_down = true
-						case .LeftAlt:      alt_down = true
-						case .RightAlt:     alt_down = true
-						case .LeftSuper:    super_down = true
-						case .RightSuper:   super_down = true
+			#partial switch ev in event {
+			case k2.Event_Close_Window_Requested:
+				break main_loop
 
-						case .F11: should_toggle_fullscreen = true
-						case .Return: {
-							if alt_down {
-								should_toggle_fullscreen = true
-							}
-						}
-						case .Backspace:
-							if capture_text {
-								new_cursor := step_left_rune(selected_box.b.buf[:], selected_box.cursor)
-								remove_range(&selected_box.b.buf, new_cursor, selected_box.cursor)
-								selected_box.cursor = new_cursor
-							}
-						case .Tab:
-							if capture_text {
-								selected_box.focus = false
-								if shift_down {
-									selected_box = selected_box.prev
-								} else {
-									selected_box = selected_box.next
-								}
-								selected_box.focus = true
-							}
-						case .Left:
-							if capture_text {
-								selected_box.cursor = step_left_rune(selected_box.b.buf[:], selected_box.cursor)
-							}
-						case .Right:
-							if capture_text {
-								selected_box.cursor = step_right_rune(selected_box.b.buf[:], selected_box.cursor)
-							}
-						case .Up:
-							if capture_text {
-								selected_box.cursor = 0
-							}
-						case .Down:
-							if capture_text {
-								selected_box.cursor = len(selected_box.b.buf)
-							}
-						case .V:
-							if capture_text && (ctrl_down || super_down) {
-								path := get_clipboard(&gfx)
-								strings.builder_reset(&selected_box.b)
-								strings.write_string(&selected_box.b, path)
-								selected_box.cursor = len(selected_box.b.buf)
-							}
-						case .R: {
-							if !capture_text && (ctrl_down || super_down) {
-								load_trace(&loader, trace, &ui_state, strings.clone(trace.file_name))
-							}
-						}
+			case k2.Event_Mouse_Move:
+				p := karl2d_coords_physical_to_logical(karl2d_current_coords(&gfx), Vec2(ev.position))
+				mouse_moved(p.x, p.y)
+
+			case k2.Event_Mouse_Button_Went_Up:
+				if ev.button == .Left {
+					p := karl2d_coords_physical_to_logical(karl2d_current_coords(&gfx), Vec2(k2.get_mouse_position()))
+					mouse_up(p.x, p.y)
+				}
+
+			case k2.Event_Mouse_Button_Went_Down:
+				if ev.button == .Left {
+					p := karl2d_coords_physical_to_logical(karl2d_current_coords(&gfx), Vec2(k2.get_mouse_position()))
+					mouse_down(p.x, p.y)
+				}
+
+			case k2.Event_Mouse_Wheel:
+				mouse_scroll(f64(ev.delta))
+
+			case k2.Event_Key_Went_Down,
+				 k2.Event_Key_Repeat:
+
+				key: k2.Keyboard_Key
+				#partial switch ev in event {
+				case k2.Event_Key_Went_Down: key = ev.key
+				case k2.Event_Key_Repeat:    key = ev.key
+				}
+
+				#partial switch key {
+				case .Left_Shift:    shift_down = true
+				case .Right_Shift:   shift_down = true
+				case .Left_Control:  ctrl_down  = true
+				case .Right_Control: ctrl_down  = true
+				case .Left_Alt:      alt_down   = true
+				case .Right_Alt:     alt_down   = true
+				case .Left_Super:    super_down = true
+				case .Right_Super:   super_down = true
+
+				case .F11: should_toggle_fullscreen = true
+				case .Enter:
+					if alt_down {
+						should_toggle_fullscreen = true
 					}
-				}
-				case .KeyUp: {
-					#partial switch ev.key {
-						case .LeftShift:    shift_down = false
-						case .RightShift:   shift_down = false
-						case .LeftControl:  ctrl_down = false
-						case .RightControl: ctrl_down = false
-						case .LeftAlt:      alt_down = false
-						case .RightAlt:     alt_down = false
-						case .LeftSuper:    super_down = false
-						case .RightSuper:   super_down = false
-					}
-				}
-				case .Resize: {
-					width = ev.w
-					height = ev.h
-				}
-				case .FileDropped: {
-					load_trace(&loader, trace, &ui_state, ev.str)
-				}
-				case .Rune: {
+				case .Backspace:
 					if capture_text {
-						cur_str := strings.to_string(selected_box.b)
-						r_len := utf8.rune_count_in_string(cur_str)
-
-						new_rune := ev.str
-						defer delete(new_rune)
-						if selected_box.cursor == r_len {
-							strings.write_string(&selected_box.b, new_rune)
-							selected_box.cursor += 1
+						new_cursor := step_left_rune(selected_box.b.buf[:], selected_box.cursor)
+						remove_range(&selected_box.b.buf, new_cursor, selected_box.cursor)
+						selected_box.cursor = new_cursor
+					}
+				case .Tab:
+					if capture_text {
+						selected_box.focus = false
+						if shift_down {
+							selected_box = selected_box.prev
 						} else {
-							inject_at(&selected_box.b.buf, selected_box.cursor, new_rune)
-							selected_box.cursor += 1
+							selected_box = selected_box.next
 						}
+						selected_box.focus = true
+					}
+				case .Left:
+					if capture_text {
+						selected_box.cursor = step_left_rune(selected_box.b.buf[:], selected_box.cursor)
+					}
+				case .Right:
+					if capture_text {
+						selected_box.cursor = step_right_rune(selected_box.b.buf[:], selected_box.cursor)
+					}
+				case .Up:
+					if capture_text {
+						selected_box.cursor = 0
+					}
+				case .Down:
+					if capture_text {
+						selected_box.cursor = len(selected_box.b.buf)
+					}
+				case .V:
+					if capture_text && (ctrl_down || super_down) {
+						path := get_clipboard()
+						defer delete(path)
+						strings.builder_reset(&selected_box.b)
+						strings.write_string(&selected_box.b, path)
+						selected_box.cursor = len(selected_box.b.buf)
+					}
+				case .R:
+					if !capture_text && (ctrl_down || super_down) {
+						load_trace(&loader, trace, &ui_state, strings.clone(trace.file_name))
 					}
 				}
+
+			case k2.Event_Key_Went_Up:
+				#partial switch ev.key {
+				case .Left_Shift:    shift_down = false
+				case .Right_Shift:   shift_down = false
+				case .Left_Control:  ctrl_down  = false
+				case .Right_Control: ctrl_down  = false
+				case .Left_Alt:      alt_down   = false
+				case .Right_Alt:     alt_down   = false
+				case .Left_Super:    super_down = false
+				case .Right_Super:   super_down = false
+				}
+
+			case k2.Event_Screen_Resize:
+				width  = f64(ev.width)
+				height = f64(ev.height)
+				karl2d_coords_update_gfx(&gfx, ev.width, ev.height, gfx.window_scale)
+
+			case k2.Event_Window_Scale_Changed:
+				width  = f64(ev.screen_width)
+				height = f64(ev.screen_height)
+				karl2d_coords_update_gfx(&gfx, ev.screen_width, ev.screen_height, f64(ev.scale))
+
+			// TODO: file drop
+            // case .FileDropped:
+            //     load_trace(&loader, trace, &ui_state, strings.clone(ev.str))
+            //     path, ok := ui_drop_path(ev)
+            //     if ok {
+            //         // path is owned by this call and consumed by load_trace.
+            //     }
+
+            case k2.Event_Typed_Rune:
+                if capture_text {
+                    cur_str := strings.to_string(selected_box.b)
+                    cur_len := utf8.rune_count_in_string(cur_str)
+
+					buf, w := utf8.encode_rune(ev.typed)
+					str := string(buf[:w])
+
+                    if selected_box.cursor == cur_len {
+                        strings.write_string(&selected_box.b, str)
+                        selected_box.cursor += 1
+                    } else {
+                        inject_at(&selected_box.b.buf, selected_box.cursor, str)
+                        selected_box.cursor += 1
+                    }
+                }
 			}
 		}
+
+        // Don't draw anything when not awake
+        if !awake do continue main_loop
 
 		if should_toggle_fullscreen {
 			fullscreen = !fullscreen
@@ -533,19 +493,7 @@ main :: proc() {
 			height = f64(h)
 		}
 
-		gl.Viewport(0, 0, i32(width), i32(height))
-		gl.Uniform1f(u_dpr, f32(dpr))
-		gl.Uniform2f(u_res, f32(width), f32(height))
-		gl.BindBuffer(gl.ARRAY_BUFFER, rect_deets_buffer)
-		gl.BindVertexArray(vao)
-
-		gl.ClearColor(
-			f32(bg_color2.x) / 255,
-			f32(bg_color2.y) / 255,
-			f32(bg_color2.z) / 255,
-			f32(bg_color2.w) / 255,
-		)
-		gl.Clear(gl.COLOR_BUFFER_BIT)
+		k2.clear(bg_color2)
 
 		ui_state.height = height / dpr
 		ui_state.width  = width / dpr
@@ -599,10 +547,10 @@ main :: proc() {
 		ui_state.padded_flamegraph_rect.h -= em
 
 		#partial switch ui_state.ui_mode {
-			case .MainMenu: draw_main_menu(&gfx, trace, &ui_state, dt)
-			case .SampleRunning: draw_sample_running(&gfx, trace, &ui_state, dt)
-			case .TraceLoading: draw_trace_loading(&gfx, trace, &ui_state, dt)
-			case .TraceView: draw_trace_view(&gfx, trace, &ui_state,  dt)
+        case .MainMenu:      draw_main_menu(&gfx, trace, &ui_state, dt)
+        case .SampleRunning: draw_sample_running(&gfx, trace, &ui_state, dt)
+        case .TraceLoading:  draw_trace_loading(&gfx, trace, &ui_state, dt)
+        case .TraceView:     draw_trace_view(&gfx, trace, &ui_state,  dt)
 		}
 
 		// reset the cursor if we're not over a selectable thing
@@ -610,49 +558,31 @@ main :: proc() {
 			reset_cursor(&gfx)
 		}
 
-		// Phew... Ok, time to dump to the screen
-		flush_rects(&gfx)
-
 		// save me my battery, plz
-		if should_sleep(&cam, &ui_state) {
-			cam.pan.x = cam.target_pan_x
-			cam.vel.y = 0
-			cam.current_scale = cam.target_scale
-			ui_state.stats_pane_scroll_vel = 0
+        awake = !should_sleep(&cam, &ui_state)
+		if !awake {
+			cam.pan.x                       = cam.target_pan_x
+			cam.vel.y                       = 0
+			cam.current_scale               = cam.target_scale
+			ui_state.stats_pane_scroll_vel  = 0
 			ui_state.filter_pane_scroll_vel = 0
-
-			awake = false
-		} else {
-			awake = true
 		}
 
-		gl.Finish()
-		swap_buffers(&gfx)
-		gl.Finish()
+		k2.present()
 	}
 
-	when SELF_TRACE || GOOD_BOY_MODE {
-		loader_destroy(&loader)
-	}
-
-	when GOOD_BOY_MODE {
-		gl.destroy_uniforms(rect_uniforms)
-
-		delete(gfx.rects)
-		delete(gfx.text_rects)
-
-		free_trace(trace)
-		free(trace)
-
-		queue.destroy(&fps_history)
-		lru.destroy(&lru_text_cache, true)
-	}
+	shutdown_runtime(&loader, trace, &gfx)
+	queue.destroy(&fps_history)
 }
 
 should_sleep :: proc(cam: ^Camera, ui_state: ^UIState) -> bool {
-	PAN_X_EPSILON :: 0.01
-	PAN_Y_EPSILON :: 1.0
-	SCALE_EPSILON :: 0.01
+
+    // TODO: scaling is causing endless sleep
+    // if true do return false
+
+	PAN_X_EPSILON  :: 0.01
+	PAN_Y_EPSILON  :: 1.0
+	SCALE_EPSILON  :: 0.01
 	SCROLL_EPSILON :: 0.01
 
 	if opt.full_speed {

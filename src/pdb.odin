@@ -7,7 +7,7 @@ import "core:mem"
 import "core:strings"
 import "core:fmt"
 
-// PDB is complete nonsense. 
+// PDB is complete nonsense.
 // At the bottom of the PDB header is an array of offsets. The array of offsets get you blocks, containing offsets.
 // *THOSE* offsets get you the blocks containing the data to figure out what your data is.
 
@@ -199,7 +199,6 @@ Line :: struct {
 	address: u64,
 	file_idx: u32,
 	number: u32,
-	inline: bool,
 }
 
 load_pdb :: proc(trace: ^Trace, section_buffer: []u8, pdb_buffer: []u8, bucket: ^Func_Bucket) -> bool {
@@ -212,14 +211,14 @@ load_pdb :: proc(trace: ^Trace, section_buffer: []u8, pdb_buffer: []u8, bucket: 
 	msf_end_buffer := pdb_buffer[size_of(PDB_MSF_Header):][:directory_block_count * size_of(u32)]
 	directory_block_offsets := slice.reinterpret([]u32, msf_end_buffer)
 	directory_offsets := slice.reinterpret([]u32, linearize_stream(pdb_buffer, directory_block_offsets, msf_hdr.block_size, directory_block_count * size_of(u32)))
-	defer delete(directory_offsets) 
+	defer delete(directory_offsets)
 	directory_stream  := slice.reinterpret([]u32, linearize_stream(pdb_buffer, directory_offsets, msf_hdr.block_size, msf_hdr.directory_size))
-	defer delete(directory_stream) 
+	defer delete(directory_stream)
 
 	stream_count  := directory_stream[0]
 	stream_sizes  := directory_stream[1:1+stream_count]
 	stream_blocks := directory_stream[1+stream_count:]
-	
+
 	// This is the offset into the stream directory. Each one points to the list of blocks that make up a stream
 	stream_block_offsets := make([]u32, stream_count)
 	defer delete(stream_block_offsets)
@@ -234,7 +233,7 @@ load_pdb :: proc(trace: ^Trace, section_buffer: []u8, pdb_buffer: []u8, bucket: 
 	info_stream_size := stream_sizes[INFO_STREAM_IDX]
 	info_stream_offset_stream := stream_blocks[info_stream_offset:]
 	info_stream := linearize_stream(pdb_buffer, info_stream_offset_stream, msf_hdr.block_size, info_stream_size)
-	defer delete(info_stream) 
+	defer delete(info_stream)
 
 	info_offset := 0
 	info_hdr := slice_to_type(info_stream, PDB_Info_Stream_Header) or_return
@@ -397,14 +396,6 @@ load_pdb :: proc(trace: ^Trace, section_buffer: []u8, pdb_buffer: []u8, bucket: 
 						}
 
 						cur_offset = lfb_end_offset
-					}
-				}
-				case .InlineLines: {
-					inline_lines_hdr := slice_to_type(symbol_stream[cur_offset:], PDB_Inline_Line_Header)
-					#partial switch inline_lines_hdr.type {
-						case .Signature: {
-							inline_line := slice_to_type(symbol_stream[cur_offset:], PDB_Inline_Line)
-						}
 					}
 				}
 			}

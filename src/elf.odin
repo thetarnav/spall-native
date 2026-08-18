@@ -534,7 +534,6 @@ get_symbol_size :: proc(ctx: ^ELF_Context) -> int {
 }
 
 parse_symbol :: proc(ctx: ^ELF_Context, blob: []u8) -> (ELF_Symbol, bool) {
-	iter_size := 0
 
 	cmn_sym := ELF_Symbol{}
 	if ctx.bits_64 {
@@ -673,9 +672,8 @@ load_elf :: proc(trace: ^Trace, binary_blob: []u8, bucket: ^Func_Bucket) -> bool
 			continue
 		}
 
-		addr := section_hdr.addr
 		start := section_hdr.offset
-		size := section_hdr.size
+		size  := section_hdr.size
 		section_name := string(cstring(raw_data(section_name_blob)))
 		switch section_name {
 		case ".dynamic":

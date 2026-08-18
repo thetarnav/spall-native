@@ -4,26 +4,24 @@ package main
 import "core:strings"
 import "core:sys/windows"
 
-foreign import user32 "system:User32.lib"
-foreign user32 {
-    GetDpiForSystem :: proc() -> u32 ---
-}
-
-platform_pre_init :: proc() {
-	velocity_multiplier = -100
-	windows.SetProcessDpiAwarenessContext(windows.DPI_AWARENESS_CONTEXT_SYSTEM_AWARE)
-
-}
-platform_post_init :: proc() { }
-
-platform_dpi_hack :: proc() -> f64 {
-    return f64(GetDpiForSystem()) / 96.0
+// Convert a dialog buffer without exposing the Windows dialog API to callers.
+// Keeping this separate also makes path conversion testable without opening a dialog.
+windows_path_from_utf16 :: proc(path_buf: []u16) -> (string, bool) {
+	file_name, ok := windows.utf16_to_utf8(path_buf, context.temp_allocator)
+	if !ok {
+		return "", false
+	}
+	trimmed_name := strings.trim_right_null(file_name)
+	if len(trimmed_name) == 0 {
+		return "", false
+	}
+	return strings.clone(trimmed_name), true
 }
 
 open_file_dialog :: proc() -> (string, bool) {
 	path_buf := make([]u16, windows.MAX_PATH_WIDE)
 	if path_buf == nil {
-		push_fatal(SpallError.OutOfMemory)
+		return "", false
 	}
 	defer delete(path_buf)
 
@@ -53,10 +51,7 @@ open_file_dialog :: proc() -> (string, bool) {
 		return "", false
 	}
 
-	file_name, _ := windows.utf16_to_utf8(path_buf[:], context.temp_allocator)
-	trimmed_name := strings.trim_right_null(file_name)
-	path := strings.clone(trimmed_name)
-	return path, true
+	return windows_path_from_utf16(path_buf[:])
 }
 
 // we don't actually demangle on Windows, because Windows.
