@@ -164,8 +164,8 @@ start_sampling :: proc(loader: ^Loader, trace: ^Trace, ui_state: ^UIState, progr
 spall_ctx: spall.Context
 @(thread_local) spall_buffer: spall.Buffer
 
-SELF_TRACE :: false
-GOOD_BOY_MODE :: false
+SELF_TRACE    :: #config(SELF_TRACE, false)
+GOOD_BOY_MODE :: #config(GOOD_BOY_MODE, false)
 opt := Cmd_Options{}
 
 when SELF_TRACE {

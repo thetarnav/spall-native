@@ -128,8 +128,7 @@ pool_worker :: proc(ptr: rawptr) {
 		defer spall.buffer_destroy(&spall_ctx, &spall_buffer)
 	}
 
-	work_start: for {
-		if !pool.running { break }
+	work_start: for pool.running {
 
 		finished_tasks := 0
 		for {
